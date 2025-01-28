@@ -106,3 +106,60 @@ func (g *RealGitRunner) IsRebaseInProgress() (bool, error) {
 func IsRebaseInProgress() (bool, error) {
 	return DefaultRunner.IsRebaseInProgress()
 }
+
+// RunGitCommandWithOutput runs a git command and returns its output as a string
+func (g *RealGitRunner) RunGitCommandWithOutput(args ...string) (string, error) {
+	var stdout bytes.Buffer
+	if viper.GetBool("sageExplain") {
+		fmt.Printf("[explain] Running: git %s\n", strings.Join(args, " "))
+	}
+
+	cmd := exec.Command("git", args...)
+	cmd.Stdout = &stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(stdout.String()), nil
+}
+
+// RunGitCommandWithOutput is a package-level function that delegates to DefaultRunner
+func RunGitCommandWithOutput(args ...string) (string, error) {
+	return DefaultRunner.RunGitCommandWithOutput(args...)
+}
+
+// GetBranches returns a list of all local branches
+func (g *RealGitRunner) GetBranches() ([]string, error) {
+	output, err := g.RunGitCommandWithOutput("branch", "--list", "--format=%(refname:short)")
+	if err != nil {
+		return nil, err
+	}
+
+	if output == "" {
+		return []string{}, nil
+	}
+
+	branches := strings.Split(output, "\n")
+	return branches, nil
+}
+
+// GetBranches is a package-level function that delegates to DefaultRunner
+func GetBranches() ([]string, error) {
+	return DefaultRunner.GetBranches()
+}
+
+// BranchExists checks if a branch exists
+func (g *RealGitRunner) BranchExists(branchName string) (bool, error) {
+	output, err := g.RunGitCommandWithOutput("branch", "--list", branchName)
+	if err != nil {
+		return false, err
+	}
+	return output != "", nil
+}
+
+// BranchExists is a package-level function that delegates to DefaultRunner
+func BranchExists(branchName string) (bool, error) {
+	return DefaultRunner.BranchExists(branchName)
+}

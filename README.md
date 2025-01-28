@@ -32,10 +32,10 @@ cd sage
 go build -o sage
 ```
 
-4. Move Sage to your PATH (optional, for convenience):
+4. Install Sage to your PATH (optional, for convenience):
 
 ```bash
-mv sage /usr/local/bin/
+go install
 ```
 
 5. Check it:

@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/crazywolf132/sage/internal/gitutils"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/crazywolf132/sage/internal/gitutils"
 )
+
+// Additional test cases for merge and rebase scenarios can be added here
 
 func TestMergeInProgress(t *testing.T) {
 	mock := new(gitutils.MockGitRunner)

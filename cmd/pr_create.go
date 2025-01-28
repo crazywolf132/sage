@@ -6,6 +6,7 @@ import (
 
 	"github.com/crazywolf132/sage/internal/githubutils"
 	"github.com/crazywolf132/sage/internal/gitutils"
+	"github.com/crazywolf132/sage/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -41,6 +42,18 @@ var prCreateCmd = &cobra.Command{
 			return err
 		}
 
+		// If title is not provided via flag, use the interactive form
+		if prTitle == "" {
+			form, err := ui.GetPRDetails()
+			if err != nil {
+				return err
+			}
+			prTitle = form.Title
+			if prBody == "" {
+				prBody = form.Body
+			}
+		}
+
 		// default base if none provided
 		if prBase == "" {
 			prBase = "main"
@@ -69,9 +82,7 @@ var prCreateCmd = &cobra.Command{
 func init() {
 	prCmd.AddCommand(prCreateCmd)
 
-	prCreateCmd.Flags().StringVarP(&prTitle, "title", "t", "", "Title of the pull request (required)")
-	_ = prCreateCmd.MarkFlagRequired("title")
-
+	prCreateCmd.Flags().StringVarP(&prTitle, "title", "t", "", "Title of the pull request")
 	prCreateCmd.Flags().StringVarP(&prBody, "body", "b", "", "Body/description of the pull request")
 	prCreateCmd.Flags().StringVar(&prBase, "base", "", "Base branch (default: main)")
 	prCreateCmd.Flags().BoolVar(&prDraft, "draft", false, "Create a draft pull request")

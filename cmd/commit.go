@@ -4,13 +4,16 @@ import (
 	"fmt"
 
 	"github.com/crazywolf132/sage/internal/gitutils"
+	"github.com/crazywolf132/sage/internal/ui"
 	"github.com/spf13/cobra"
 )
+
+var useConventional bool
 
 // commitCmd represents "sage commit [message]"
 var commitCmd = &cobra.Command{
 	Use:           "commit [message]",
-	Short:         "Stage all changes and commit with the provided message (or open an editor)",
+	Short:         "Stage all changes and commit with the provided message (or use interactive form)",
 	Args:          cobra.MaximumNArgs(1),
 	SilenceUsage:  true,
 	SilenceErrors: true,
@@ -21,31 +24,40 @@ var commitCmd = &cobra.Command{
 		}
 
 		// Check if we're in a git repository
-		if err := gitutils.RunGitCommand("rev-parse", "--git-dir"); err != nil {
+		if err := gitutils.DefaultRunner.RunGitCommand("rev-parse", "--git-dir"); err != nil {
 			return fmt.Errorf("not a git repository")
+		}
+
+		// Stage all changes by default
+		if err := gitutils.DefaultRunner.RunGitCommand("add", "."); err != nil {
+			return err
 		}
 
 		var commitMsg string
 		if len(args) == 1 {
 			commitMsg = args[0]
-		}
-
-		// Stage all changes by default
-		if err := gitutils.RunGitCommand("add", "."); err != nil {
-			return err
-		}
-
-		if commitMsg == "" {
-			// Open interactive editor if message not provided
-			// By default, `git commit` will open the configured editor
-			if err := gitutils.RunGitCommand("commit"); err != nil {
-				return err
-			}
 		} else {
-			// If user provided a message, use it
-			if err := gitutils.RunGitCommand("commit", "-m", commitMsg); err != nil {
+			// Use interactive form when no message provided
+			form, err := ui.GetCommitDetails(useConventional)
+			if err != nil {
 				return err
 			}
+
+			if useConventional {
+				// Format conventional commit message
+				if form.Scope != "" {
+					commitMsg = fmt.Sprintf("%s(%s): %s", form.Type, form.Scope, form.Message)
+				} else {
+					commitMsg = fmt.Sprintf("%s: %s", form.Type, form.Message)
+				}
+			} else {
+				commitMsg = form.Message
+			}
+		}
+
+		// Create the commit with the message
+		if err := gitutils.DefaultRunner.RunGitCommand("commit", "-m", commitMsg); err != nil {
+			return err
 		}
 
 		fmt.Println("Commit successful.")
@@ -55,7 +67,5 @@ var commitCmd = &cobra.Command{
 
 func init() {
 	RootCmd.AddCommand(commitCmd)
-	// Additional flags: --amend, --no-verify, etc., can be added here
-	// e.g. commitCmd.Flags().Bool("amend", false, "Amend the last commit")
-	// and handle that logic in RunE if needed.
+	commitCmd.Flags().BoolVarP(&useConventional, "conventional", "c", false, "Use conventional commit format")
 }

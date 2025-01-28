@@ -29,14 +29,14 @@ func TestStartCommandWithGitErrors(t *testing.T) {
 
 	// Test error when creating new branch
 	expectedErr = fmt.Errorf("failed to create branch")
-	mockGit.On("RunGitCommand", []string{"checkout", "-b", "feature/test"}).Return(expectedErr).Once()
+	mockGit.On("RunGitCommand", "checkout", "-b", "feature/test").Return(expectedErr).Once()
 	err = mockGit.RunGitCommand("checkout", "-b", "feature/test")
 	assert.Error(t, err)
 	assert.Equal(t, expectedErr, err)
 
 	// Test error when pushing to remote
 	expectedErr = fmt.Errorf("failed to push to remote")
-	mockGit.On("RunGitCommand", []string{"push", "-u", "origin", "feature/test"}).Return(expectedErr).Once()
+	mockGit.On("RunGitCommand", "push", "-u", "origin", "feature/test").Return(expectedErr).Once()
 	err = mockGit.RunGitCommand("push", "-u", "origin", "feature/test")
 	assert.Error(t, err)
 	assert.Equal(t, expectedErr, err)

@@ -5,10 +5,24 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 
 	"github.com/crazywolf132/sage/cmd"
 	"github.com/crazywolf132/sage/internal/gitutils"
+	"github.com/crazywolf132/sage/internal/ui"
 )
+
+// Original GetCommitDetails function
+var originalGetCommitDetails = ui.GetCommitDetails
+
+// Mock commit details for testing
+func mockGetCommitDetails(useConventional bool) (ui.CommitForm, error) {
+	return ui.CommitForm{
+		Type:    "feat",
+		Scope:   "",
+		Message: "interactive commit message",
+	}, nil
+}
 
 func TestCommitCommand(t *testing.T) {
 	t.Run("successful commit", func(t *testing.T) {
@@ -17,12 +31,12 @@ func TestCommitCommand(t *testing.T) {
 		gitutils.DefaultRunner = mockGit
 
 		// Setup mock expectations for git repo check
-		mockGit.On("RunGitCommand", []string{"rev-parse", "--git-dir"}).Return(nil).Once()
-		mockGit.On("RunGitCommand", []string{"add", "."}).Return(nil).Once()
-		mockGit.On("RunGitCommand", []string{"commit", "-m", "test commit"}).Return(nil).Once()
+		mockGit.On("RunGitCommand", "rev-parse", "--git-dir").Return(nil)
+		mockGit.On("RunGitCommand", "add", ".").Return(nil)
+		mockGit.On("RunGitCommand", "commit", "-m", "test commit").Return(nil)
 
-		// Create a fresh command instance
-		rootCmd := cmd.NewRootCmd()
+		// Use the global root command
+		rootCmd := cmd.RootCmd
 		rootCmd.SetArgs([]string{"commit", "test commit"})
 		err := rootCmd.Execute()
 
@@ -37,12 +51,12 @@ func TestCommitCommand(t *testing.T) {
 		gitutils.DefaultRunner = mockGit
 
 		// Setup mock expectations for git repo check
-		mockGit.On("RunGitCommand", []string{"rev-parse", "--git-dir"}).Return(nil).Once()
-		mockGit.On("RunGitCommand", []string{"add", "."}).Return(nil).Once()
-		mockGit.On("RunGitCommand", []string{"commit", "-m", "test commit"}).Return(fmt.Errorf("nothing to commit, working tree clean")).Once()
+		mockGit.On("RunGitCommand", "rev-parse", "--git-dir").Return(nil)
+		mockGit.On("RunGitCommand", "add", ".").Return(nil)
+		mockGit.On("RunGitCommand", "commit", "-m", "test commit").Return(fmt.Errorf("nothing to commit, working tree clean"))
 
-		// Create a fresh command instance
-		rootCmd := cmd.NewRootCmd()
+		// Use the global root command
+		rootCmd := cmd.RootCmd
 		rootCmd.SetArgs([]string{"commit", "test commit"})
 		err := rootCmd.Execute()
 
@@ -53,19 +67,14 @@ func TestCommitCommand(t *testing.T) {
 	})
 
 	t.Run("too many arguments", func(t *testing.T) {
-		// Create a fresh mock for this test
-		mockGit := &gitutils.MockGitRunner{}
-		gitutils.DefaultRunner = mockGit
-
-		// Create a fresh command instance
-		rootCmd := cmd.NewRootCmd()
-		rootCmd.SetArgs([]string{"commit", "test commit", "extra"})
+		// Use the global root command
+		rootCmd := cmd.RootCmd
+		rootCmd.SetArgs([]string{"commit", "test commit", "extra arg"})
 		err := rootCmd.Execute()
 
 		// Assert
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "accepts at most 1 arg(s)")
-		mockGit.AssertExpectations(t)
 	})
 
 	t.Run("no commit message", func(t *testing.T) {
@@ -73,19 +82,24 @@ func TestCommitCommand(t *testing.T) {
 		mockGit := &gitutils.MockGitRunner{}
 		gitutils.DefaultRunner = mockGit
 
-		// Setup mock expectations for git repo check
-		mockGit.On("RunGitCommand", []string{"rev-parse", "--git-dir"}).Return(nil).Once()
-		mockGit.On("RunGitCommand", []string{"add", "."}).Return(nil).Once()
-		mockGit.On("RunGitCommand", []string{"commit"}).Return(nil).Once()
+		// Mock the UI interaction
+		ui.GetCommitDetails = mockGetCommitDetails
+		defer func() {
+			ui.GetCommitDetails = originalGetCommitDetails
+		}()
 
-		// Create a fresh command instance
-		rootCmd := cmd.NewRootCmd()
-		rootCmd.SetArgs([]string{"commit"})
+		// Setup mock expectations for git repo check
+		mockGit.On("RunGitCommand", mock.Anything, mock.Anything).Return(nil).Times(2)
+		mockGit.On("RunGitCommand", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+		// Use the global root command
+		rootCmd := cmd.RootCmd
+		rootCmd.SetArgs([]string{"commit", "-c"})
 		err := rootCmd.Execute()
 
 		// Assert
 		assert.NoError(t, err)
-		mockGit.AssertExpectations(t)
+		mockGit.AssertNumberOfCalls(t, "RunGitCommand", 3) // rev-parse, add, commit
 	})
 
 	t.Run("not a git repository", func(t *testing.T) {
@@ -94,17 +108,17 @@ func TestCommitCommand(t *testing.T) {
 		gitutils.DefaultRunner = mockGit
 
 		// Setup mock expectations for git repo check
-		mockGit.On("RunGitCommand", []string{"rev-parse", "--git-dir"}).Return(fmt.Errorf("fatal: not a git repository")).Once()
+		mockGit.On("RunGitCommand", mock.Anything, mock.Anything).Return(fmt.Errorf("fatal: not a git repository"))
 
-		// Create a fresh command instance
-		rootCmd := cmd.NewRootCmd()
+		// Use the global root command
+		rootCmd := cmd.RootCmd
 		rootCmd.SetArgs([]string{"commit", "test commit"})
 		err := rootCmd.Execute()
 
 		// Assert
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not a git repository")
-		mockGit.AssertExpectations(t)
+		mockGit.AssertNumberOfCalls(t, "RunGitCommand", 1) // only rev-parse
 	})
 
 	t.Run("git add fails", func(t *testing.T) {
@@ -113,17 +127,17 @@ func TestCommitCommand(t *testing.T) {
 		gitutils.DefaultRunner = mockGit
 
 		// Setup mock expectations for git repo check
-		mockGit.On("RunGitCommand", []string{"rev-parse", "--git-dir"}).Return(nil).Once()
-		mockGit.On("RunGitCommand", []string{"add", "."}).Return(fmt.Errorf("fatal: unable to add files")).Once()
+		mockGit.On("RunGitCommand", mock.Anything, mock.Anything).Return(nil).Once()
+		mockGit.On("RunGitCommand", mock.Anything, mock.Anything).Return(fmt.Errorf("fatal: unable to add files"))
 
-		// Create a fresh command instance
-		rootCmd := cmd.NewRootCmd()
+		// Use the global root command
+		rootCmd := cmd.RootCmd
 		rootCmd.SetArgs([]string{"commit", "test commit"})
 		err := rootCmd.Execute()
 
 		// Assert
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "unable to add files")
-		mockGit.AssertExpectations(t)
+		mockGit.AssertNumberOfCalls(t, "RunGitCommand", 2) // rev-parse and add
 	})
 }

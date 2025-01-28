@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/crazywolf132/sage/internal/ui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -51,6 +52,8 @@ It aims to make Git operations more intuitive and faster.`,
 	cmd.PersistentFlags().StringVar(&cfgFile, "config", "", "Use a custom config file (default is $HOME/.sage.yaml)")
 	cmd.PersistentFlags().BoolVar(&explain, "explain", false, "Show the underlying Git commands that Sage executes")
 
+	// Changing colors of help template.
+	cmd.SetUsageTemplate(ui.ColorHeadings(cmd.UsageTemplate()))
 	return cmd
 }
 

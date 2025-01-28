@@ -172,17 +172,24 @@ func MergePullRequest(token, owner, repo string, number int, method string) erro
 	return nil
 }
 
-// CheckoutPullRequest checks out a PR branch locally: "git fetch origin pull/<number>/head:pr-<number>; git checkout pr-<number>"
-func CheckoutPullRequest(number int) error {
-	// This function shells out to Git. Another approach is to parse the PR object for head ref.
-	fetchCmd := exec.Command("git", "fetch", "origin", fmt.Sprintf("pull/%d/head:pr-%d", number, number))
+// CheckoutPullRequest checks out a PR branch locally using the PR's head reference.
+func CheckoutPullRequest(token, owner, repo string, number int) error {
+	// First, get the PR details to get the head reference
+	pr, err := GetPullRequest(token, owner, repo, number)
+	if err != nil {
+		return fmt.Errorf("failed to get PR details: %w", err)
+	}
+
+	// Fetch the PR's head reference
+	fetchCmd := exec.Command("git", "fetch", "origin", pr.Head.Ref)
 	if err := fetchCmd.Run(); err != nil {
 		return fmt.Errorf("failed to fetch PR %d: %w", number, err)
 	}
 
-	checkoutCmd := exec.Command("git", "checkout", fmt.Sprintf("pr-%d", number))
+	// Checkout the fetched reference
+	checkoutCmd := exec.Command("git", "checkout", pr.Head.Ref)
 	if err := checkoutCmd.Run(); err != nil {
-		return fmt.Errorf("failed to checkout PR-%d branch: %w", number, err)
+		return fmt.Errorf("failed to checkout branch %s: %w", pr.Head.Ref, err)
 	}
 	return nil
 }

@@ -19,7 +19,17 @@ var prCheckoutCmd = &cobra.Command{
 			return errors.New("invalid PR number")
 		}
 
-		err = githubutils.CheckoutPullRequest(prNumber)
+		token, err := githubutils.GetGitHubToken()
+		if err != nil {
+			return fmt.Errorf("failed to get GitHub token: %w", err)
+		}
+
+		owner, repo, err := githubutils.FindRepoOwnerAndName()
+		if err != nil {
+			return fmt.Errorf("failed to get repo info: %w", err)
+		}
+
+		err = githubutils.CheckoutPullRequest(token, owner, repo, prNumber)
 		if err != nil {
 			return fmt.Errorf("failed to checkout PR %d: %w", prNumber, err)
 		}

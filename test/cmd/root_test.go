@@ -19,8 +19,8 @@ func TestRootCommand(t *testing.T) {
 		err := os.WriteFile(configFile, []byte("defaultBranch: main"), 0644)
 		require.NoError(t, err)
 
-		// Create a fresh command instance
-		rootCmd := cmd.NewRootCmd()
+		// Use the global root command
+		rootCmd := cmd.RootCmd
 		rootCmd.SetArgs([]string{"--config", configFile})
 		err = rootCmd.Execute()
 
@@ -29,8 +29,8 @@ func TestRootCommand(t *testing.T) {
 	})
 
 	t.Run("invalid config file", func(t *testing.T) {
-		// Create a fresh command instance
-		rootCmd := cmd.NewRootCmd()
+		// Use the global root command
+		rootCmd := cmd.RootCmd
 		rootCmd.SetArgs([]string{"--config", "nonexistent.yaml"})
 		err := rootCmd.Execute()
 
@@ -39,8 +39,8 @@ func TestRootCommand(t *testing.T) {
 	})
 
 	t.Run("explain flag", func(t *testing.T) {
-		// Create a fresh command instance
-		rootCmd := cmd.NewRootCmd()
+		// Use the global root command
+		rootCmd := cmd.RootCmd
 		rootCmd.SetArgs([]string{"--explain"})
 		err := rootCmd.Execute()
 
@@ -49,8 +49,8 @@ func TestRootCommand(t *testing.T) {
 	})
 
 	t.Run("help command", func(t *testing.T) {
-		// Create a fresh command instance
-		rootCmd := cmd.NewRootCmd()
+		// Use the global root command
+		rootCmd := cmd.RootCmd
 		rootCmd.SetArgs([]string{"--help"})
 		err := rootCmd.Execute()
 
@@ -59,8 +59,8 @@ func TestRootCommand(t *testing.T) {
 	})
 
 	t.Run("unknown command", func(t *testing.T) {
-		// Create a fresh command instance
-		rootCmd := cmd.NewRootCmd()
+		// Use the global root command
+		rootCmd := cmd.RootCmd
 		rootCmd.SetArgs([]string{"unknown"})
 		err := rootCmd.Execute()
 

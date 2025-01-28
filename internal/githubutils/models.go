@@ -16,4 +16,7 @@ type PullRequest struct {
 	Title   string `json:"title"`
 	State   string `json:"state"`
 	Body    string `json:"body"`
+	Head    struct {
+		Ref string `json:"ref"`
+	} `json:"head"`
 }
