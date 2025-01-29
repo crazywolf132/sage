@@ -95,6 +95,90 @@ sage pr checkout 42
 sage pr merge 42 --method squash
 ```
 
+## Command Guide 📖
+
+Here's a complete guide to Sage's commands:
+
+### Branch Management
+
+```bash
+# Create a new branch from default branch (usually main)
+sage start <branch-name>
+
+# Sync current branch with default branch
+sage sync
+
+# View current branch status
+sage status
+```
+
+### Changes & Commits
+
+```bash
+# Stage and commit changes
+sage commit "<message>"
+
+# Push changes to remote
+sage push
+
+# Undo last operation (commit, merge, etc)
+sage undo
+```
+
+### Pull Request Operations
+
+```bash
+# Create a new PR
+sage pr create --title "<title>" --body "<description>"
+
+# List pull requests
+sage pr list [--state open|closed|all]
+
+# Check out a PR locally
+sage pr checkout <pr-number>
+
+# View PR status
+sage pr status [pr-number]
+
+# Merge a PR
+sage pr merge <pr-number> [--method merge|squash|rebase]
+
+# Close a PR without merging
+sage pr close <pr-number>
+
+# List PR review comments and TODOs
+sage pr todos
+```
+
+### Configuration
+
+```bash
+# View current configuration
+sage config
+
+# Set configuration values
+sage config set <key> <value>
+
+# Common config options:
+# - defaultBranch: Your main branch name (default: main)
+# - defaultMergeMethod: Preferred PR merge method (default: merge)
+```
+
+### Other Commands
+
+```bash
+# Check Sage version
+sage version
+
+# View help for any command
+sage help [command]
+```
+
+### Environment Variables
+
+- `SAGE_GITHUB_TOKEN` or `GITHUB_TOKEN`: Your GitHub personal access token
+- `SAGE_CONFIG`: Custom config file location
+
 ## Future Growth
 
 Even though I'm just one person maintaining this right now, I see a lot of potential for Sage:
