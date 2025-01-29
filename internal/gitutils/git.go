@@ -163,3 +163,14 @@ func (g *RealGitRunner) BranchExists(branchName string) (bool, error) {
 func BranchExists(branchName string) (bool, error) {
 	return DefaultRunner.BranchExists(branchName)
 }
+
+// IsWorkingTreeClean checks if the git working tree is clean (no uncommitted changes)
+func IsWorkingTreeClean() (bool, error) {
+	// Check for staged and unstaged changes
+	output, err := DefaultRunner.RunGitCommandWithOutput("status", "--porcelain")
+	if err != nil {
+		return false, err
+	}
+
+	return output == "", nil
+}
