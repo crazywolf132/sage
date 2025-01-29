@@ -120,6 +120,11 @@ func handleSyncContinue(currentBranch string) error {
 		return fmt.Errorf("no merge in progress")
 	}
 
+	// Stage all files
+	if err := gitutils.DefaultRunner.RunGitCommand("add", "."); err != nil {
+		return fmt.Errorf("failed to stage files: %w", err)
+	}
+
 	// Get parent branch name from MERGE_HEAD
 	parentBranch, err := gitutils.DefaultRunner.RunGitCommandWithOutput("name-rev", "--name-only", "MERGE_HEAD")
 	if err != nil {

@@ -74,3 +74,30 @@ type PREvent struct {
 	Message   string    `json:"message,omitempty"` // For commit messages
 	SHA       string    `json:"sha,omitempty"`     // For commit SHA
 }
+
+// PRComment represents a comment on a pull request
+type PRComment struct {
+	ID   int    `json:"id"`
+	Body string `json:"body"`
+	User struct {
+		Login string `json:"login"`
+	} `json:"user"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// PRReviewComment represents a review comment on a pull request (in-line comment)
+type PRReviewComment struct {
+	ID   int    `json:"id"`
+	Body string `json:"body"`
+	User struct {
+		Login string `json:"login"`
+	} `json:"user"`
+	Path      string    `json:"path"`
+	Line      int       `json:"line"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	InReplyTo int       `json:"in_reply_to_id,omitempty"`
+	Resolved  bool      `json:"resolved,omitempty"`
+	ThreadID  string    `json:"thread_id,omitempty"`
+}

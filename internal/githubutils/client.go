@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -188,11 +189,23 @@ func CheckoutPullRequest(token, owner, repo string, number int) error {
 		return fmt.Errorf("failed to fetch PR %d: %w", number, err)
 	}
 
-	// Checkout the fetched reference
-	checkoutCmd := exec.Command("git", "checkout", pr.Head.Ref)
+	// Create and checkout a new branch with the PR number
+	branchName := fmt.Sprintf("pr-%d", number)
+	checkoutCmd := exec.Command("git", "checkout", "-b", branchName, "origin/"+pr.Head.Ref)
 	if err := checkoutCmd.Run(); err != nil {
-		return fmt.Errorf("failed to checkout branch %s: %w", pr.Head.Ref, err)
+		// If branch exists, try to check it out directly
+		checkoutCmd = exec.Command("git", "checkout", branchName)
+		if err := checkoutCmd.Run(); err != nil {
+			return fmt.Errorf("failed to checkout branch %s: %w", branchName, err)
+		}
 	}
+
+	// Set up tracking branch
+	trackCmd := exec.Command("git", "branch", "--set-upstream-to", "origin/"+pr.Head.Ref, branchName)
+	if err := trackCmd.Run(); err != nil {
+		return fmt.Errorf("failed to set upstream branch: %w", err)
+	}
+
 	return nil
 }
 
@@ -444,4 +457,40 @@ func getPRTimeline(token, owner, repo string, number int) ([]PREvent, error) {
 	}
 
 	return events, nil
+}
+
+// GetPRReviewComments fetches all review comments for a PR and organizes them into threads
+func GetPRReviewComments(token, owner, repo string, number int) ([]PRReviewComment, error) {
+	apiURL := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/comments", BaseURL, owner, repo, number)
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "token "+token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var comments []PRReviewComment
+	if err := json.NewDecoder(resp.Body).Decode(&comments); err != nil {
+		return nil, err
+	}
+
+	// Sort comments by thread and creation time
+	sort.Slice(comments, func(i, j int) bool {
+		if comments[i].ThreadID != comments[j].ThreadID {
+			return comments[i].ThreadID < comments[j].ThreadID
+		}
+		return comments[i].CreatedAt.Before(comments[j].CreatedAt)
+	})
+
+	return comments, nil
 }
