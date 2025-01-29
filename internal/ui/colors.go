@@ -13,9 +13,13 @@ var (
 	Red    string = ""
 	Yellow string = ""
 	White  string = ""
+	Purple string = ""
+	Gray   string = ""
+	Green  string = ""
 
 	Reset string = termchroma.Reset
 	Bold  string = termchroma.Bold
+	Dim   string = termchroma.Dim
 )
 
 func ColorHeadings(text string) string {
@@ -67,4 +71,7 @@ func init() {
 	Yellow, _ = termchroma.ANSIForeground("#FFC402")
 	Red, _ = termchroma.ANSIForeground("#FF707E")
 	White, _ = termchroma.ANSIForeground("#FFF")
+	Purple, _ = termchroma.ANSIForeground("#C678DD")
+	Gray, _ = termchroma.ANSIForeground("#6B737C")
+	Green, _ = termchroma.ANSIForeground("#98C379")
 }
