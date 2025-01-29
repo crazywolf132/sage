@@ -55,17 +55,14 @@ var prCreateCmd = &cobra.Command{
 				}
 			}
 
-			form, err := ui.GetPRDetails()
+			// Pre-populate the form with the template if available
+			form, err := ui.GetPRDetails(templateContent)
 			if err != nil {
 				return err
 			}
 			prTitle = form.Title
 			if prBody == "" {
-				if templateContent != "" {
-					prBody = templateContent
-				} else {
-					prBody = form.Body
-				}
+				prBody = form.Body
 			}
 		}
 

@@ -79,8 +79,9 @@ func getCommitDetails(useConventional bool) (CommitForm, error) {
 }
 
 // GetPRDetails prompts the user for pull request details
-func GetPRDetails() (PRForm, error) {
+func GetPRDetails(template string) (PRForm, error) {
 	var form PRForm
+	form.Body = template // Set initial value before creating the form
 
 	err := huh.NewForm(
 		huh.NewGroup(
@@ -96,6 +97,7 @@ func GetPRDetails() (PRForm, error) {
 			huh.NewText().
 				Title("Body").
 				Value(&form.Body).
+				CharLimit(4000).
 				Validate(func(s string) error {
 					if len(s) < 10 {
 						return fmt.Errorf("PR description should be at least 10 characters")

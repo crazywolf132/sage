@@ -29,6 +29,7 @@ type commitInfo struct {
 var (
 	showStats bool
 	lastN     int
+	showAll   bool
 )
 
 var historyCmd = &cobra.Command{
@@ -46,7 +47,8 @@ Examples:
   sage history              # Show history of current branch
   sage history main        # Show history of main branch
   sage history -n 10      # Show last 10 commits
-  sage history --stats    # Show file change statistics`,
+  sage history --stats    # Show file change statistics
+  sage history --all      # Show all commits including parent branches`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Get target branch
@@ -70,12 +72,37 @@ Examples:
 		if showStats {
 			logCmd = append(logCmd, "--numstat")
 		}
-		logCmd = append(logCmd, targetBranch)
+
+		if !showAll {
+			// Get the current branch's upstream if it exists
+			upstream, err := gitutils.DefaultRunner.RunGitCommandWithOutput("rev-parse", "--abbrev-ref", targetBranch+"@{upstream}")
+			if err == nil {
+				// Show only commits that are in the current branch but not in upstream
+				logCmd = append(logCmd, fmt.Sprintf("%s..%s", strings.TrimSpace(upstream), targetBranch))
+			} else {
+				// If no upstream, just show the branch's commits
+				logCmd = append(logCmd, targetBranch)
+			}
+		} else {
+			logCmd = append(logCmd, targetBranch)
+		}
 
 		// Get commit history
 		output, err := gitutils.DefaultRunner.RunGitCommandWithOutput(logCmd...)
 		if err != nil {
-			return fmt.Errorf("failed to get git history: %w", err)
+			// If the command failed, try a simpler approach
+			logCmd = []string{"log", "--format=" + logFormat}
+			if lastN > 0 {
+				logCmd = append(logCmd, "-n", fmt.Sprintf("%d", lastN))
+			}
+			if showStats {
+				logCmd = append(logCmd, "--numstat")
+			}
+			logCmd = append(logCmd, targetBranch)
+			output, err = gitutils.DefaultRunner.RunGitCommandWithOutput(logCmd...)
+			if err != nil {
+				return fmt.Errorf("failed to get git history: %w", err)
+			}
 		}
 
 		// Parse commits
@@ -86,13 +113,14 @@ Examples:
 			ui.ColoredText("Branch History:", ui.Bold+ui.Sage),
 			ui.ColoredText(targetBranch, ui.Yellow))
 
-		// Print commits
+		// Print commits in reverse order (latest at bottom)
 		var lastDate string
-		for i, commit := range commits {
+		for i := len(commits) - 1; i >= 0; i-- {
+			commit := commits[i]
 			// Print date header if date changed
 			currentDate := commit.Date.Format("Mon Jan 02 2006")
 			if currentDate != lastDate {
-				if i > 0 {
+				if lastDate != "" {
 					fmt.Println()
 				}
 				fmt.Printf(" %s\n", ui.ColoredText(currentDate, ui.Bold+ui.Blue))
@@ -221,4 +249,5 @@ func init() {
 	RootCmd.AddCommand(historyCmd)
 	historyCmd.Flags().BoolVarP(&showStats, "stats", "s", false, "Show file change statistics")
 	historyCmd.Flags().IntVarP(&lastN, "number", "n", 0, "Limit to last N commits")
+	historyCmd.Flags().BoolVarP(&showAll, "all", "a", false, "Show all commits including parent branches")
 }

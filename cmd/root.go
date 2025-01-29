@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/crazywolf132/sage/internal/ui"
+	"github.com/crazywolf132/sage/internal/update"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -27,6 +28,14 @@ It aims to make Git operations more intuitive and faster.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			// Check for updates before running any command
+			if err := update.CheckForUpdates(); err != nil {
+				// Just log the error and continue - update check is not critical
+				fmt.Fprintf(os.Stderr, "%s Failed to check for updates: %v\n",
+					ui.ColoredText("!", ui.Yellow),
+					err)
+			}
+
 			if cfgFile != "" {
 				// Use config file from the flag
 				viper.SetConfigFile(cfgFile)
