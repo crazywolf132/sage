@@ -8,7 +8,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var useConventional bool
+var (
+	useConventional bool
+	pushAfterCommit bool
+)
 
 // commitCmd represents "sage commit [message]"
 var commitCmd = &cobra.Command{
@@ -61,6 +64,21 @@ var commitCmd = &cobra.Command{
 		}
 
 		fmt.Println("Commit successful.")
+
+		// Push if requested
+		if pushAfterCommit {
+			currentBranch, err := gitutils.GetCurrentBranch()
+			if err != nil {
+				return fmt.Errorf("failed to get current branch: %w", err)
+			}
+
+			fmt.Printf("Pushing to origin/%s...\n", currentBranch)
+			if err := gitutils.DefaultRunner.RunGitCommand("push", "origin", currentBranch); err != nil {
+				return fmt.Errorf("failed to push: %w", err)
+			}
+			fmt.Println("Push successful.")
+		}
+
 		return nil
 	},
 }
@@ -68,4 +86,5 @@ var commitCmd = &cobra.Command{
 func init() {
 	RootCmd.AddCommand(commitCmd)
 	commitCmd.Flags().BoolVarP(&useConventional, "conventional", "c", false, "Use conventional commit format")
+	commitCmd.Flags().BoolVarP(&pushAfterCommit, "push", "p", false, "Push changes after committing")
 }
