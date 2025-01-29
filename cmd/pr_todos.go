@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/crazywolf132/sage/internal/githubutils"
 	"github.com/crazywolf132/sage/internal/ui"
@@ -61,9 +62,11 @@ If no PR number is provided, it will look for a PR associated with the current b
 		// Group comments by thread
 		threads := make(map[string][]githubutils.PRReviewComment)
 		for _, comment := range comments {
+			threadKey := comment.Path + ":" + strconv.Itoa(comment.Line)
 			if comment.ThreadID != "" {
-				threads[comment.ThreadID] = append(threads[comment.ThreadID], comment)
+				threadKey = comment.ThreadID
 			}
+			threads[threadKey] = append(threads[threadKey], comment)
 		}
 
 		// Print unresolved threads
@@ -71,7 +74,7 @@ If no PR number is provided, it will look for a PR associated with the current b
 		for _, thread := range threads {
 			// Check if thread is resolved
 			lastComment := thread[len(thread)-1]
-			if !lastComment.Resolved {
+			if !lastComment.Resolved && !isResolutionComment(lastComment.Body) {
 				if !hasUnresolved {
 					fmt.Printf("\n%s\n", ui.ColoredText("Unresolved Threads:", ui.Sage))
 					hasUnresolved = true
@@ -79,10 +82,16 @@ If no PR number is provided, it will look for a PR associated with the current b
 
 				// Print thread location
 				firstComment := thread[0]
-				fmt.Printf("\n%s %s:%d\n",
-					ui.ColoredText("→", ui.Yellow),
-					ui.ColoredText(firstComment.Path, ui.Blue),
-					firstComment.Line)
+				if firstComment.Path != "" {
+					fmt.Printf("\n%s %s:%d\n",
+						ui.ColoredText("→", ui.Yellow),
+						ui.ColoredText(firstComment.Path, ui.Blue),
+						firstComment.Line)
+				} else {
+					fmt.Printf("\n%s %s\n",
+						ui.ColoredText("→", ui.Yellow),
+						ui.ColoredText("General Comment", ui.Blue))
+				}
 
 				// Print thread comments
 				for _, comment := range thread {
@@ -90,7 +99,7 @@ If no PR number is provided, it will look for a PR associated with the current b
 					fmt.Printf("  %s %s: %s\n",
 						ui.ColoredText(timestamp, ui.White),
 						ui.ColoredText("@"+comment.User.Login, ui.Yellow),
-						comment.Body)
+						strings.Split(comment.Body, "\n")[0]) // Show first line only
 				}
 			}
 		}
@@ -101,6 +110,27 @@ If no PR number is provided, it will look for a PR associated with the current b
 
 		return nil
 	},
+}
+
+// isResolutionComment checks if a comment appears to be resolving the thread
+func isResolutionComment(body string) bool {
+	body = strings.ToLower(body)
+	resolutionPhrases := []string{
+		"fixed",
+		"done",
+		"resolved",
+		"addressed",
+		"thanks",
+		"thank you",
+		"👍",
+		"lgtm",
+	}
+	for _, phrase := range resolutionPhrases {
+		if strings.Contains(body, phrase) {
+			return true
+		}
+	}
+	return false
 }
 
 func init() {

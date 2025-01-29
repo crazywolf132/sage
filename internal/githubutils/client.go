@@ -461,13 +461,14 @@ func getPRTimeline(token, owner, repo string, number int) ([]PREvent, error) {
 
 // GetPRReviewComments fetches all review comments for a PR and organizes them into threads
 func GetPRReviewComments(token, owner, repo string, number int) ([]PRReviewComment, error) {
+	// Get review comments (these are the inline comments)
 	apiURL := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/comments", BaseURL, owner, repo, number)
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Authorization", "token "+token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Accept", "application/vnd.github.comfort-fade-preview+json") // For thread information
 
 	resp, err := DefaultClient.Do(req)
 	if err != nil {
@@ -482,6 +483,27 @@ func GetPRReviewComments(token, owner, repo string, number int) ([]PRReviewComme
 	var comments []PRReviewComment
 	if err := json.NewDecoder(resp.Body).Decode(&comments); err != nil {
 		return nil, err
+	}
+
+	// Get issue comments (these are the general PR comments)
+	issueURL := fmt.Sprintf("%s/repos/%s/%s/issues/%d/comments", BaseURL, owner, repo, number)
+	req, err = http.NewRequest("GET", issueURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "token "+token)
+
+	resp, err = DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 200 {
+		var issueComments []PRReviewComment
+		if err := json.NewDecoder(resp.Body).Decode(&issueComments); err == nil {
+			comments = append(comments, issueComments...)
+		}
 	}
 
 	// Sort comments by thread and creation time
