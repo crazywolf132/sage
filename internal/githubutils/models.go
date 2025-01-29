@@ -62,7 +62,9 @@ type PRCheck struct {
 
 // PREvent represents a timeline event on a pull request
 type PREvent struct {
-	Event     string    `json:"event"`
-	Actor     string    `json:"actor"`
+	Event string `json:"event"`
+	Actor struct {
+		Login string `json:"login"`
+	} `json:"actor"`
 	CreatedAt time.Time `json:"created_at"`
 }

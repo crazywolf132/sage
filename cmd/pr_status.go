@@ -150,7 +150,7 @@ func printPRStatus(pr *githubutils.PullRequestDetails) {
 			fmt.Printf("  %s: %s by @%s\n",
 				ui.ColoredText(timestamp, ui.White),
 				event.Event,
-				event.Actor)
+				event.Actor.Login)
 		}
 	}
 }
