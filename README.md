@@ -1,20 +1,24 @@
-# Sage
+# Sage 🪴
 
-Sage is a lightweight command-line tool that wraps Git with friendlier commands, safety checks, and shortcuts. It's built in Go, currently maintained by a single developer (me!), and aims to make Git workflows less stressful—especially when collaborating or juggling multiple branches.
+Hey there! Welcome to Sage - your friendly neighborhood Git companion. Think of it as a smart wrapper around Git that helps you streamline your workflow.
 
-## Why Sage Exists
+## Why Did I Build This? 🤔
 
-Working with Git can sometimes feel overwhelming. Even experienced developers occasionally run into mysterious conflicts, forget to stash changes before switching branches, or accidentally force-push over someone else's work. Meanwhile, new contributors might struggle with memorizing the right commands or fear messing up the repository history.
+Let's be real - Git is powerful, but sometimes its workflow can be streamlined. I built this because:
+- I wanted to automate repetitive Git workflows
+- Switching contexts between terminal and browser for PR management was tedious
+- Merge conflicts were taking up too much of my day
+- I knew there had to be a faster way to handle common Git tasks
 
-I built Sage because I was tired of hearing (and feeling) this frustration—and I wanted a helper tool that didn't hide Git's power, but still made common tasks (like branching, committing, pushing, and creating pull requests) simpler and safer.
+So I built Sage to make my life easier, and hopefully yours too!
 
-## How Sage Helps
+## What Makes Sage Cool? ✨
 
-* **Safer Operations**: Before destructive actions (like force pushes), Sage prompts you for confirmation, and automatically creates backup refs so you can recover if something goes wrong.
-* **Simple Commands**: Instead of juggling git checkout -b, git pull, git push -u, etc., you can do things like `sage start feature/my-branch --push` to handle it all in one go.
-* **Undo Functionality**: Run `sage undo` to revert the last Sage-driven action—like aborting a merge or rolling back a commit—without digging around in Git's man pages.
-* **Pull Request Integration**: `sage pr create --title "Add feature"` automatically handles authentication and talks to GitHub for you. You can list, merge, or check out pull requests right from the CLI.
-* **Config & Extensibility**: You can tweak Sage's behavior (like your default branch, whether to rebase or merge) via configuration files or environment variables.
+* **Workflow Automation**: Sage handles common Git operations with smart defaults and built-in best practices.
+* **Simple Commands**: Instead of typing `git checkout -b feature/branch && git pull origin main && git push -u origin feature/branch`, just do `sage start feature/branch`. Your fingers will thank you.
+* **Smart Recovery**: `sage undo` gives you a clean way to reverse your last operation.
+* **PR Magic**: Create and manage pull requests right from your terminal. No more context-switching to GitHub!
+* **Your Tool, Your Rules**: Customize Sage to work how you want. Because everyone has their preferred Git workflow.
 
 ## Getting Started
 
@@ -45,63 +49,49 @@ sage --help
 sage version
 ```
 
-## Basic Usage
+## Basic Usage 🚀
 
 ### Start a new branch
 
 ```bash
-sage start feature/my-branch --push
+sage start feature/awesome-stuff
 ```
+Boom! New branch created, latest updates pulled, and pushed to GitHub. All in one go.
 
-Creates feature/my-branch from your default branch (e.g., main), pulls latest updates, and pushes it up to GitHub.
-
-### Commit changes
+### Commit your masterpiece
 
 ```bash
-sage commit "Implement new feature"
+sage commit "Add that thing that does the stuff"
 ```
+Stages and commits everything. No more `git add .` followed by `git commit -m` dance.
 
-Stages all changes and commits them with a single line command.
-
-### Push changes
+### Push it real good
 
 ```bash
 sage push
 ```
+Pushes your work to origin. If you need --force, Sage will make sure you don't shoot yourself in the foot.
 
-Pushes your current branch to origin. If --force is needed, Sage will prompt you for confirmation, then create a backup ref just in case.
-
-### Undo last operation
+### Undo that thing you just did
 
 ```bash
 sage undo
 ```
+We all make mistakes. This one's got your back.
 
-Rolls back your most recent commit, merge, or rebase.
-
-### Pull request operations
-
-* Create a PR:
+### PR stuff made easy
 
 ```bash
-sage pr create --title "Add feature" --body "Implements a new feature"
-```
+# Create a PR
+sage pr create --title "🚀 Add awesome feature" --body "Trust me, this is good"
 
-* List PRs:
-
-```bash
+# See what's cooking
 sage pr list --state open
-```
 
-* Checkout a PR branch:
-
-```bash
+# Check out someone's PR
 sage pr checkout 42
-```
 
-* Merge a PR:
-
-```bash
+# Merge it in
 sage pr merge 42 --method squash
 ```
 
@@ -115,7 +105,7 @@ Even though I'm just one person maintaining this right now, I see a lot of poten
 * **Plugin System**: Let teams extend Sage with custom commands or checks.
 * **Optional Lint/Checks**: Pre-commit hooks, code checks, or commit message style enforcement.
 
-I hope to grow this into a stable, community-driven project where Git novices and veterans alike can feel more confident in their daily workflows.
+I hope to grow this into a stable, community-driven project where developers can feel more confident in their daily workflows.
 
 ## Contributing & Feedback
 
@@ -133,5 +123,6 @@ MIT License. Feel free to use Sage for your own projects, modify it, or share it
 
 ---
 
-Thanks for checking out Sage!
-If it saves you time or frustration, feel free to star the repo or spread the word. I appreciate any feedback as I continue improving this tool.
+If Sage saves you from even one tedious Git task, my mission is accomplished! Star the repo if you like it, and feel free to spread the word to your fellow developers. 
+
+Happy coding! 🎉
