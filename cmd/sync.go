@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/crazywolf132/sage/internal/gitutils"
-	"github.com/crazywolf132/sage/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -121,22 +120,19 @@ func handleSyncContinue(currentBranch string) error {
 		return fmt.Errorf("no merge in progress")
 	}
 
-	// Get merge commit details
-	form, err := ui.GetCommitDetails(true) // Always use conventional commits for merge commits
+	// Get parent branch name from MERGE_HEAD
+	parentBranch, err := gitutils.DefaultRunner.RunGitCommandWithOutput("name-rev", "--name-only", "MERGE_HEAD")
 	if err != nil {
-		return fmt.Errorf("failed to get commit details: %w", err)
+		return fmt.Errorf("failed to get parent branch name: %w", err)
 	}
+	// Clean up the branch name (remove remote prefix if present)
+	parentBranch = strings.TrimPrefix(strings.TrimSpace(parentBranch), "remotes/origin/")
 
-	// Format conventional commit message
-	var commitMsg string
-	if form.Scope != "" {
-		commitMsg = fmt.Sprintf("merge(%s): %s", form.Scope, form.Message)
-	} else {
-		commitMsg = fmt.Sprintf("merge: %s", form.Message)
-	}
+	// Create our custom merge message
+	commitMsg := fmt.Sprintf("merge(%s): merged %s updates", parentBranch, parentBranch)
 
-	// Complete the merge with the commit message
-	if err := gitutils.DefaultRunner.RunGitCommand("commit", "--no-edit", "-m", commitMsg); err != nil {
+	// Complete the merge with our custom message
+	if err := gitutils.DefaultRunner.RunGitCommand("commit", "-m", commitMsg); err != nil {
 		return fmt.Errorf("failed to complete merge: %w", err)
 	}
 
