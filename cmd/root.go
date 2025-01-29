@@ -57,6 +57,42 @@ It aims to make Git operations more intuitive and faster.`,
 	return cmd
 }
 
+func init() {
+	cobra.OnInitialize(initConfig)
+
+	// Set default configuration values
+	viper.SetDefault("defaultBranch", "main")
+	viper.SetDefault("pr.defaultDraft", false)
+	viper.SetDefault("pr.forceDraft", false)
+}
+
+// initConfig reads in config file and ENV variables if set.
+func initConfig() {
+	if cfgFile != "" {
+		// Use config file from the flag.
+		viper.SetConfigFile(cfgFile)
+	} else {
+		// Find home directory.
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error finding home directory:", err)
+			return
+		}
+
+		// Search config in home directory with name ".sage" (without extension).
+		viper.AddConfigPath(home)
+		viper.SetConfigType("yaml")
+		viper.SetConfigName(".sage")
+	}
+
+	viper.AutomaticEnv() // read in environment variables that match
+
+	// If a config file is found, read it in.
+	if err := viper.ReadInConfig(); err == nil {
+		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+	}
+}
+
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() error {

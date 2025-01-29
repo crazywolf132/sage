@@ -2,6 +2,7 @@ package githubutils
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -212,4 +213,57 @@ func FindRepoOwnerAndName() (string, string, error) {
 		return "", "", fmt.Errorf("invalid GitHub remote URL: %s", originURL)
 	}
 	return matches[1], matches[2], nil
+}
+
+// GetPullRequestTemplate fetches the PR template from the repository.
+// It checks for templates in the following locations (in order):
+// 1. .github/PULL_REQUEST_TEMPLATE.md
+// 2. .github/pull_request_template.md
+// 3. docs/PULL_REQUEST_TEMPLATE.md
+// 4. PULL_REQUEST_TEMPLATE.md
+func GetPullRequestTemplate(token, owner, repo string) (string, error) {
+	templatePaths := []string{
+		".github/PULL_REQUEST_TEMPLATE.md",
+		".github/pull_request_template.md",
+		"docs/PULL_REQUEST_TEMPLATE.md",
+		"PULL_REQUEST_TEMPLATE.md",
+	}
+
+	for _, path := range templatePaths {
+		apiURL := fmt.Sprintf("%s/repos/%s/%s/contents/%s", BaseURL, owner, repo, path)
+		req, err := http.NewRequest("GET", apiURL, nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Authorization", "token "+token)
+
+		resp, err := DefaultClient.Do(req)
+		if err != nil {
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			continue
+		}
+
+		var content struct {
+			Content  string `json:"content"`
+			Encoding string `json:"encoding"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&content); err != nil {
+			continue
+		}
+
+		// GitHub returns content as base64 encoded
+		if content.Encoding == "base64" {
+			decoded, err := base64.StdEncoding.DecodeString(content.Content)
+			if err != nil {
+				continue
+			}
+			return string(decoded), nil
+		}
+	}
+
+	return "", nil // No template found
 }

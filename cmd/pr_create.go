@@ -8,13 +8,15 @@ import (
 	"github.com/crazywolf132/sage/internal/gitutils"
 	"github.com/crazywolf132/sage/internal/ui"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var (
-	prTitle string
-	prBody  string
-	prBase  string
-	prDraft bool
+	prTitle     string
+	prBody      string
+	prBase      string
+	prDraft     bool
+	useTemplate bool
 )
 
 var prCreateCmd = &cobra.Command{
@@ -44,19 +46,41 @@ var prCreateCmd = &cobra.Command{
 
 		// If title is not provided via flag, use the interactive form
 		if prTitle == "" {
+			// Get PR template if requested and available
+			var templateContent string
+			if useTemplate {
+				templateContent, err = githubutils.GetPullRequestTemplate(token, owner, repo)
+				if err != nil {
+					fmt.Println("Warning: Failed to fetch PR template:", err)
+				}
+			}
+
 			form, err := ui.GetPRDetails()
 			if err != nil {
 				return err
 			}
 			prTitle = form.Title
 			if prBody == "" {
-				prBody = form.Body
+				if templateContent != "" {
+					prBody = templateContent
+				} else {
+					prBody = form.Body
+				}
 			}
 		}
 
 		// default base if none provided
 		if prBase == "" {
 			prBase = "main"
+		}
+
+		// Handle draft PR settings
+		if !prDraft { // If not explicitly set to draft via flag
+			if viper.GetBool("pr.forceDraft") {
+				prDraft = true
+			} else if viper.GetBool("pr.defaultDraft") {
+				prDraft = true
+			}
 		}
 
 		// 4. build create params
@@ -75,6 +99,9 @@ var prCreateCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Pull Request created! #%d\nURL: %s\n", pr.Number, pr.HTMLURL)
+		if pr.Draft {
+			fmt.Println("Note: This PR was created as a draft.")
+		}
 		return nil
 	},
 }
@@ -86,4 +113,5 @@ func init() {
 	prCreateCmd.Flags().StringVarP(&prBody, "body", "b", "", "Body/description of the pull request")
 	prCreateCmd.Flags().StringVar(&prBase, "base", "", "Base branch (default: main)")
 	prCreateCmd.Flags().BoolVar(&prDraft, "draft", false, "Create a draft pull request")
+	prCreateCmd.Flags().BoolVar(&useTemplate, "template", true, "Use repository's PR template if available")
 }

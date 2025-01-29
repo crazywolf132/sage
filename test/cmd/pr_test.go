@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/crazywolf132/sage/internal/githubutils"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -69,4 +70,48 @@ func TestMergePullRequest(t *testing.T) {
 	assert.NoError(t, err)
 
 	mockClient.AssertExpectations(t)
+}
+
+func TestCreatePullRequestDraftSettings(t *testing.T) {
+	t.Run("force draft enabled", func(t *testing.T) {
+		viper.Set("pr.forceDraft", true)
+		defer viper.Set("pr.forceDraft", false)
+
+		mockClient := new(MockGitHubClient)
+		mockClient.On("CreatePullRequest", "Test PR", "Test Description", "feature/test", "main").Return(1, nil)
+
+		prNumber, err := mockClient.CreatePullRequest("Test PR", "Test Description", "feature/test", "main")
+		assert.NoError(t, err)
+		assert.Equal(t, 1, prNumber)
+
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("default draft enabled", func(t *testing.T) {
+		viper.Set("pr.defaultDraft", true)
+		defer viper.Set("pr.defaultDraft", false)
+
+		mockClient := new(MockGitHubClient)
+		mockClient.On("CreatePullRequest", "Test PR", "Test Description", "feature/test", "main").Return(1, nil)
+
+		prNumber, err := mockClient.CreatePullRequest("Test PR", "Test Description", "feature/test", "main")
+		assert.NoError(t, err)
+		assert.Equal(t, 1, prNumber)
+
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("draft flag overrides settings", func(t *testing.T) {
+		viper.Set("pr.defaultDraft", false)
+		viper.Set("pr.forceDraft", false)
+
+		mockClient := new(MockGitHubClient)
+		mockClient.On("CreatePullRequest", "Test PR", "Test Description", "feature/test", "main").Return(1, nil)
+
+		prNumber, err := mockClient.CreatePullRequest("Test PR", "Test Description", "feature/test", "main")
+		assert.NoError(t, err)
+		assert.Equal(t, 1, prNumber)
+
+		mockClient.AssertExpectations(t)
+	})
 }

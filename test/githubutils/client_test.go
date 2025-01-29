@@ -342,3 +342,55 @@ func TestFindRepoOwnerAndName(t *testing.T) {
 		assert.NotEmpty(t, repo)
 	})
 }
+
+func TestGetPullRequestTemplate(t *testing.T) {
+	t.Run("template found", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, "GET", r.Method)
+			assert.Equal(t, "/repos/owner/repo/contents/.github/PULL_REQUEST_TEMPLATE.md", r.URL.Path)
+			assert.Equal(t, "token test-token", r.Header.Get("Authorization"))
+
+			// Base64 encoded "# Pull Request Template"
+			response := map[string]string{
+				"content":  "IyBQdWxsIFJlcXVlc3QgVGVtcGxhdGU=",
+				"encoding": "base64",
+			}
+			err := json.NewEncoder(w).Encode(response)
+			require.NoError(t, err)
+		}))
+		defer server.Close()
+
+		oldClient := githubutils.DefaultClient
+		oldBaseURL := githubutils.BaseURL
+		githubutils.DefaultClient = server.Client()
+		githubutils.BaseURL = server.URL
+		defer func() {
+			githubutils.DefaultClient = oldClient
+			githubutils.BaseURL = oldBaseURL
+		}()
+
+		template, err := githubutils.GetPullRequestTemplate("test-token", "owner", "repo")
+		assert.NoError(t, err)
+		assert.Equal(t, "# Pull Request Template", template)
+	})
+
+	t.Run("no template found", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		oldClient := githubutils.DefaultClient
+		oldBaseURL := githubutils.BaseURL
+		githubutils.DefaultClient = server.Client()
+		githubutils.BaseURL = server.URL
+		defer func() {
+			githubutils.DefaultClient = oldClient
+			githubutils.BaseURL = oldBaseURL
+		}()
+
+		template, err := githubutils.GetPullRequestTemplate("test-token", "owner", "repo")
+		assert.NoError(t, err)
+		assert.Empty(t, template)
+	})
+}
