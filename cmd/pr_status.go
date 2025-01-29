@@ -115,7 +115,7 @@ func printPRStatus(pr *githubutils.PullRequestDetails) {
 			case "COMMENTED":
 				reviewColor = ui.Blue
 			}
-			fmt.Printf("  %s by @%s\n", ui.ColoredText(review.State, reviewColor), review.User)
+			fmt.Printf("  %s by @%s\n", ui.ColoredText(review.State, reviewColor), review.User.Login)
 		}
 	}
 

@@ -49,7 +49,9 @@ type PullRequestDetails struct {
 // PRReview represents a review on a pull request
 type PRReview struct {
 	State string `json:"state"`
-	User  string `json:"user"`
+	User  struct {
+		Login string `json:"login"`
+	} `json:"user"`
 }
 
 // PRCheck represents a CI check on a pull request
