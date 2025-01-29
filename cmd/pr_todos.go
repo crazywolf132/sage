@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/crazywolf132/sage/internal/githubutils"
+	"github.com/crazywolf132/sage/internal/gitutils"
 	"github.com/crazywolf132/sage/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -16,7 +17,10 @@ var prTodosCmd = &cobra.Command{
 	Short: "Show unresolved comment threads in a pull request",
 	Long: `Display all unresolved comment threads in a pull request.
 This helps track what still needs to be addressed before the PR can be merged.
-If no PR number is provided, it will look for a PR associated with the current branch.`,
+If no PR number is provided, it will look for a PR associated with the current branch.
+
+You can configure bots to ignore using:
+  git config sage.ignore-bots "github-actions[bot],dependabot[bot]"`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// 1. Get token
@@ -32,6 +36,14 @@ If no PR number is provided, it will look for a PR associated with the current b
 		owner, repo, err := githubutils.FindRepoOwnerAndName()
 		if err != nil {
 			return err
+		}
+
+		// Get list of bots to ignore
+		botsToIgnore := make(map[string]bool)
+		if botsConfig, err := gitutils.DefaultRunner.RunGitCommandWithOutput("config", "--get", "sage.ignore-bots"); err == nil {
+			for _, bot := range strings.Split(strings.TrimSpace(botsConfig), ",") {
+				botsToIgnore[strings.TrimSpace(bot)] = true
+			}
 		}
 
 		var prNumber int
@@ -62,6 +74,10 @@ If no PR number is provided, it will look for a PR associated with the current b
 		// Group comments by thread
 		threads := make(map[string][]githubutils.PRReviewComment)
 		for _, comment := range comments {
+			// Skip comments from ignored bots
+			if botsToIgnore[comment.User.Login] {
+				continue
+			}
 			threadKey := comment.Path + ":" + strconv.Itoa(comment.Line)
 			if comment.ThreadID != "" {
 				threadKey = comment.ThreadID
@@ -72,8 +88,17 @@ If no PR number is provided, it will look for a PR associated with the current b
 		// Print unresolved threads
 		hasUnresolved := false
 		for _, thread := range threads {
+			// Skip empty threads (could happen if all comments were from bots)
+			if len(thread) == 0 {
+				continue
+			}
+
 			// Check if thread is resolved
 			lastComment := thread[len(thread)-1]
+			// Skip if last comment is from an ignored bot
+			if botsToIgnore[lastComment.User.Login] {
+				continue
+			}
 			if !lastComment.Resolved && !isResolutionComment(lastComment.Body) {
 				if !hasUnresolved {
 					fmt.Printf("\n%s\n", ui.ColoredText("Unresolved Threads:", ui.Sage))
@@ -95,6 +120,10 @@ If no PR number is provided, it will look for a PR associated with the current b
 
 				// Print thread comments
 				for _, comment := range thread {
+					// Skip comments from ignored bots
+					if botsToIgnore[comment.User.Login] {
+						continue
+					}
 					timestamp := comment.CreatedAt.Format("Jan 02")
 					fmt.Printf("  %s %s: %s\n",
 						ui.ColoredText(timestamp, ui.White),
