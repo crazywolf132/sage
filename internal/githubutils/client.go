@@ -267,3 +267,147 @@ func GetPullRequestTemplate(token, owner, repo string) (string, error) {
 
 	return "", nil // No template found
 }
+
+// GetPullRequestDetails fetches comprehensive information about a PR including reviews, checks, and timeline
+func GetPullRequestDetails(token, owner, repo string, number int) (*PullRequestDetails, error) {
+	// First get the basic PR info
+	pr, err := GetPullRequest(token, owner, repo, number)
+	if err != nil {
+		return nil, err
+	}
+
+	details := &PullRequestDetails{
+		Number:  pr.Number,
+		HTMLURL: pr.HTMLURL,
+		Title:   pr.Title,
+		State:   pr.State,
+		Body:    pr.Body,
+		Draft:   pr.Draft,
+		Head:    pr.Head,
+	}
+
+	// Get reviews
+	reviews, err := getPRReviews(token, owner, repo, number)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get PR reviews: %w", err)
+	}
+	details.Reviews = reviews
+
+	// Get check runs
+	checks, err := getPRChecks(token, owner, repo, number)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get PR checks: %w", err)
+	}
+	details.Checks = checks
+
+	// Get timeline events
+	events, err := getPRTimeline(token, owner, repo, number)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get PR timeline: %w", err)
+	}
+	details.Timeline = events
+
+	return details, nil
+}
+
+// GetCurrentBranchPR finds a PR associated with the current branch
+func GetCurrentBranchPR(token, owner, repo string) (*PullRequest, error) {
+	currentBranch, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current branch: %w", err)
+	}
+
+	// List open PRs
+	prs, err := ListPullRequests(token, owner, repo, "open")
+	if err != nil {
+		return nil, err
+	}
+
+	branchName := strings.TrimSpace(string(currentBranch))
+	for _, pr := range prs {
+		if pr.Head.Ref == branchName {
+			return &pr, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func getPRReviews(token, owner, repo string, number int) ([]PRReview, error) {
+	apiURL := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/reviews", BaseURL, owner, repo, number)
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "token "+token)
+
+	resp, err := DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var reviews []PRReview
+	if err := json.NewDecoder(resp.Body).Decode(&reviews); err != nil {
+		return nil, err
+	}
+	return reviews, nil
+}
+
+func getPRChecks(token, owner, repo string, number int) ([]PRCheck, error) {
+	apiURL := fmt.Sprintf("%s/repos/%s/%s/commits/%s/check-runs", BaseURL, owner, repo, "HEAD")
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "token "+token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var response struct {
+		CheckRuns []PRCheck `json:"check_runs"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, err
+	}
+	return response.CheckRuns, nil
+}
+
+func getPRTimeline(token, owner, repo string, number int) ([]PREvent, error) {
+	apiURL := fmt.Sprintf("%s/repos/%s/%s/issues/%d/timeline", BaseURL, owner, repo, number)
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "token "+token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var events []PREvent
+	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
+		return nil, err
+	}
+	return events, nil
+}

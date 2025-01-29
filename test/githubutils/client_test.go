@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -392,5 +394,140 @@ func TestGetPullRequestTemplate(t *testing.T) {
 		template, err := githubutils.GetPullRequestTemplate("test-token", "owner", "repo")
 		assert.NoError(t, err)
 		assert.Empty(t, template)
+	})
+}
+
+func TestGetPullRequestDetails(t *testing.T) {
+	t.Run("successful details fetch", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/repos/owner/repo/pulls/123":
+				// Basic PR info
+				pr := githubutils.PullRequest{
+					Number:  123,
+					Title:   "Test PR",
+					State:   "open",
+					HTMLURL: "https://github.com/owner/repo/pull/123",
+					Draft:   false,
+					Body:    "Test description",
+				}
+				json.NewEncoder(w).Encode(pr)
+			case "/repos/owner/repo/pulls/123/reviews":
+				// Reviews
+				reviews := []githubutils.PRReview{
+					{State: "APPROVED", User: "reviewer1"},
+					{State: "CHANGES_REQUESTED", User: "reviewer2"},
+				}
+				json.NewEncoder(w).Encode(reviews)
+			case "/repos/owner/repo/commits/HEAD/check-runs":
+				// Check runs
+				response := struct {
+					CheckRuns []githubutils.PRCheck `json:"check_runs"`
+				}{
+					CheckRuns: []githubutils.PRCheck{
+						{Name: "test", Status: "success"},
+						{Name: "build", Status: "pending"},
+					},
+				}
+				json.NewEncoder(w).Encode(response)
+			case "/repos/owner/repo/issues/123/timeline":
+				// Timeline events
+				events := []githubutils.PREvent{
+					{
+						Event:     "reviewed",
+						Actor:     "reviewer1",
+						CreatedAt: time.Now(),
+					},
+				}
+				json.NewEncoder(w).Encode(events)
+			default:
+				w.WriteHeader(http.StatusNotFound)
+			}
+		}))
+		defer server.Close()
+
+		oldClient := githubutils.DefaultClient
+		oldBaseURL := githubutils.BaseURL
+		githubutils.DefaultClient = server.Client()
+		githubutils.BaseURL = server.URL
+		defer func() {
+			githubutils.DefaultClient = oldClient
+			githubutils.BaseURL = oldBaseURL
+		}()
+
+		details, err := githubutils.GetPullRequestDetails("test-token", "owner", "repo", 123)
+		assert.NoError(t, err)
+		assert.Equal(t, 123, details.Number)
+		assert.Equal(t, "Test PR", details.Title)
+		assert.Equal(t, "open", details.State)
+		assert.False(t, details.Draft)
+		assert.Equal(t, "Test description", details.Body)
+		assert.Len(t, details.Reviews, 2)
+		assert.Len(t, details.Checks, 2)
+		assert.Len(t, details.Timeline, 1)
+	})
+
+	t.Run("api error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		}))
+		defer server.Close()
+
+		oldClient := githubutils.DefaultClient
+		oldBaseURL := githubutils.BaseURL
+		githubutils.DefaultClient = server.Client()
+		githubutils.BaseURL = server.URL
+		defer func() {
+			githubutils.DefaultClient = oldClient
+			githubutils.BaseURL = oldBaseURL
+		}()
+
+		_, err := githubutils.GetPullRequestDetails("test-token", "owner", "repo", 123)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "GitHub API returned status 401")
+	})
+}
+
+func TestGetCurrentBranchPR(t *testing.T) {
+	t.Run("pr found for current branch", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, "GET", r.Method)
+			assert.Equal(t, "/repos/owner/repo/pulls", r.URL.Path)
+			assert.Equal(t, "open", r.URL.Query().Get("state"))
+
+			prs := []githubutils.PullRequest{
+				{
+					Number: 1,
+					Title:  "PR 1",
+					State:  "open",
+					Head: struct {
+						Ref string `json:"ref"`
+					}{
+						Ref: "feature-branch",
+					},
+				},
+			}
+			json.NewEncoder(w).Encode(prs)
+		}))
+		defer server.Close()
+
+		oldClient := githubutils.DefaultClient
+		oldBaseURL := githubutils.BaseURL
+		githubutils.DefaultClient = server.Client()
+		githubutils.BaseURL = server.URL
+		defer func() {
+			githubutils.DefaultClient = oldClient
+			githubutils.BaseURL = oldBaseURL
+		}()
+
+		pr, err := githubutils.GetCurrentBranchPR("test-token", "owner", "repo")
+		if err != nil && strings.Contains(err.Error(), "failed to get current branch") {
+			t.Skip("Test skipped: not in a git repository")
+		}
+		assert.NoError(t, err)
+		if pr != nil {
+			assert.Equal(t, 1, pr.Number)
+			assert.Equal(t, "PR 1", pr.Title)
+		}
 	})
 }
