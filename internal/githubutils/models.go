@@ -21,9 +21,13 @@ type PullRequest struct {
 	State   string `json:"state"`
 	Body    string `json:"body"`
 	Draft   bool   `json:"draft"`
+	Merged  bool   `json:"merged"`
 	Head    struct {
 		Ref string `json:"ref"`
 	} `json:"head"`
+	Base struct {
+		Ref string `json:"ref"`
+	} `json:"base"`
 }
 
 // PullRequestDetails represents detailed information about a PR
@@ -67,4 +71,6 @@ type PREvent struct {
 		Login string `json:"login"`
 	} `json:"actor"`
 	CreatedAt time.Time `json:"created_at"`
+	Message   string    `json:"message,omitempty"` // For commit messages
+	SHA       string    `json:"sha,omitempty"`     // For commit SHA
 }

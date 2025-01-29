@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var (
@@ -284,6 +285,8 @@ func GetPullRequestDetails(token, owner, repo string, number int) (*PullRequestD
 		Body:    pr.Body,
 		Draft:   pr.Draft,
 		Head:    pr.Head,
+		Base:    pr.Base,
+		Merged:  pr.Merged,
 	}
 
 	// Get reviews
@@ -387,8 +390,9 @@ func getPRChecks(token, owner, repo string, number int) ([]PRCheck, error) {
 }
 
 func getPRTimeline(token, owner, repo string, number int) ([]PREvent, error) {
-	apiURL := fmt.Sprintf("%s/repos/%s/%s/issues/%d/timeline", BaseURL, owner, repo, number)
-	req, err := http.NewRequest("GET", apiURL, nil)
+	// Get commits first
+	commitsURL := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/commits", BaseURL, owner, repo, number)
+	req, err := http.NewRequest("GET", commitsURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -405,9 +409,39 @@ func getPRTimeline(token, owner, repo string, number int) ([]PREvent, error) {
 		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
 	}
 
-	var events []PREvent
-	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
+	type commitInfo struct {
+		SHA    string `json:"sha"`
+		Commit struct {
+			Message string `json:"message"`
+			Author  struct {
+				Date string `json:"date"`
+			} `json:"author"`
+		} `json:"commit"`
+		Author struct {
+			Login string `json:"login"`
+		} `json:"author"`
+	}
+
+	var commits []commitInfo
+	if err := json.NewDecoder(resp.Body).Decode(&commits); err != nil {
 		return nil, err
 	}
+
+	// Convert commits to events
+	var events []PREvent
+	for i := len(commits) - 1; i >= 0 && i >= len(commits)-5; i-- {
+		commit := commits[i]
+		createdAt, _ := time.Parse(time.RFC3339, commit.Commit.Author.Date)
+		events = append(events, PREvent{
+			Event: "committed",
+			Actor: struct {
+				Login string `json:"login"`
+			}{Login: commit.Author.Login},
+			CreatedAt: createdAt,
+			Message:   commit.Commit.Message,
+			SHA:       commit.SHA[:7], // Short SHA
+		})
+	}
+
 	return events, nil
 }

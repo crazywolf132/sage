@@ -142,15 +142,20 @@ func printPRStatus(pr *githubutils.PullRequestDetails) {
 		fmt.Printf("%s\n", pr.Body)
 	}
 
-	// Timeline
+	// Timeline (recent commits)
 	if len(pr.Timeline) > 0 {
-		fmt.Printf("\n%s\n", ui.ColoredText("Recent Activity:", ui.Sage))
+		fmt.Printf("\n%s\n", ui.ColoredText("Recent Commits:", ui.Sage))
 		for _, event := range pr.Timeline {
-			timestamp := event.CreatedAt.Format(time.RFC822)
-			fmt.Printf("  %s: %s by @%s\n",
-				ui.ColoredText(timestamp, ui.White),
-				event.Event,
-				event.Actor.Login)
+			if event.Event == "committed" {
+				timestamp := event.CreatedAt.Format(time.RFC822)
+				// Get first line of commit message
+				message := strings.Split(event.Message, "\n")[0]
+				fmt.Printf("  %s: %s (%s) by @%s\n",
+					ui.ColoredText(timestamp, ui.White),
+					message,
+					ui.ColoredText(event.SHA, ui.Yellow),
+					event.Actor.Login)
+			}
 		}
 	}
 }
