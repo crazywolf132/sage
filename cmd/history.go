@@ -74,14 +74,27 @@ Examples:
 		}
 
 		if !showAll {
-			// Get the current branch's upstream if it exists
-			upstream, err := gitutils.DefaultRunner.RunGitCommandWithOutput("rev-parse", "--abbrev-ref", targetBranch+"@{upstream}")
-			if err == nil {
-				// Show only commits that are in the current branch but not in upstream
-				logCmd = append(logCmd, fmt.Sprintf("%s..%s", strings.TrimSpace(upstream), targetBranch))
-			} else {
-				// If no upstream, just show the branch's commits
+			// Get the default branch name
+			defaultBranch, err := gitutils.DefaultRunner.RunGitCommandWithOutput("rev-parse", "--abbrev-ref", "HEAD")
+			if err != nil {
+				return fmt.Errorf("failed to get current branch: %w", err)
+			}
+			defaultBranch = strings.TrimSpace(defaultBranch)
+
+			// If we're on the default branch (main/master), show all commits
+			// Otherwise, show only commits specific to this branch
+			if defaultBranch == targetBranch {
 				logCmd = append(logCmd, targetBranch)
+			} else {
+				// Get the current branch's upstream if it exists
+				upstream, err := gitutils.DefaultRunner.RunGitCommandWithOutput("rev-parse", "--abbrev-ref", targetBranch+"@{upstream}")
+				if err == nil {
+					// Show only commits that are in the current branch but not in upstream
+					logCmd = append(logCmd, fmt.Sprintf("%s..%s", strings.TrimSpace(upstream), targetBranch))
+				} else {
+					// If no upstream, just show the branch's commits
+					logCmd = append(logCmd, targetBranch)
+				}
 			}
 		} else {
 			logCmd = append(logCmd, targetBranch)
