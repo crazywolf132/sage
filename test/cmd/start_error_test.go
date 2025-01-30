@@ -29,8 +29,8 @@ func TestStartCommandWithGitErrors(t *testing.T) {
 
 	// Test error when creating new branch
 	expectedErr = fmt.Errorf("failed to create branch")
-	mockGit.On("RunGitCommand", "checkout", "-b", "feature/test").Return(expectedErr).Once()
-	err = mockGit.RunGitCommand("checkout", "-b", "feature/test")
+	mockGit.On("RunGitCommand", "switch", "-c", "feature/test").Return(expectedErr).Once()
+	err = mockGit.RunGitCommand("switch", "-c", "feature/test")
 	assert.Error(t, err)
 	assert.Equal(t, expectedErr, err)
 

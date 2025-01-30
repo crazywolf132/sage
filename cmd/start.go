@@ -34,7 +34,7 @@ var startCmd = &cobra.Command{
 		}
 
 		// 3. Checkout default branch, pull latest
-		if err := gitutils.RunGitCommand("checkout", defaultBranch); err != nil {
+		if err := gitutils.RunGitCommand("switch", defaultBranch); err != nil {
 			return err
 		}
 		if err := gitutils.RunGitCommand("pull"); err != nil {
@@ -42,7 +42,7 @@ var startCmd = &cobra.Command{
 		}
 
 		// 4. Create new branch and switch
-		if err := gitutils.RunGitCommand("checkout", "-b", branchName); err != nil {
+		if err := gitutils.RunGitCommand("switch", "-c", branchName); err != nil {
 			return err
 		}
 		fmt.Printf("Switched to a new branch '%s'\n", branchName)

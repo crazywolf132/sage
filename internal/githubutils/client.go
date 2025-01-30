@@ -191,10 +191,10 @@ func CheckoutPullRequest(token, owner, repo string, number int) error {
 	branchName := pr.Head.Ref
 
 	// Try to checkout with tracking
-	checkoutCmd := exec.Command("git", "checkout", "-b", branchName, "--track", "origin/"+pr.Head.Ref)
+	checkoutCmd := exec.Command("git", "switch", "-c", branchName, "--track", "origin/"+pr.Head.Ref)
 	if err := checkoutCmd.Run(); err != nil {
 		// Branch might already exist, try resetting it
-		checkoutExisting := exec.Command("git", "checkout", branchName)
+		checkoutExisting := exec.Command("git", "switch", branchName)
 		if checkoutExisting.Run() != nil {
 			return fmt.Errorf("failed to checkout branch %s: %w", branchName, err)
 		}

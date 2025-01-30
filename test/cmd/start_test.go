@@ -13,11 +13,11 @@ func TestStartCommand(t *testing.T) {
 	// Test successful branch creation
 	mockGit.On("GetCurrentBranch").Return("main", nil).Once()
 	mockGit.On("IsWorkingDirectoryClean").Return(true, nil).Once()
-	mockGit.On("RunGitCommand", "checkout", "-b", "feature/test").Return(nil).Once()
+	mockGit.On("RunGitCommand", "switch", "-c", "feature/test").Return(nil).Once()
 	mockGit.On("RunGitCommand", "push", "-u", "origin", "feature/test").Return(nil).Once()
 
 	// Simulate branch creation
-	err := mockGit.RunGitCommand("checkout", "-b", "feature/test")
+	err := mockGit.RunGitCommand("switch", "-c", "feature/test")
 	assert.NoError(t, err)
 
 	// Verify current branch

@@ -62,7 +62,7 @@ var syncCmd = &cobra.Command{
 
 		// Switch to parent branch
 		fmt.Printf("Switching to %s...\n", parentBranch)
-		if err := gitutils.DefaultRunner.RunGitCommand("checkout", parentBranch); err != nil {
+		if err := gitutils.DefaultRunner.RunGitCommand("switch", parentBranch); err != nil {
 			return fmt.Errorf("failed to switch to parent branch: %w", err)
 		}
 
@@ -79,7 +79,7 @@ var syncCmd = &cobra.Command{
 
 		// Switch back to feature branch
 		fmt.Printf("Switching back to %s...\n", currentBranch)
-		if err := gitutils.DefaultRunner.RunGitCommand("checkout", currentBranch); err != nil {
+		if err := gitutils.DefaultRunner.RunGitCommand("switch", currentBranch); err != nil {
 			return fmt.Errorf("failed to switch back to feature branch: %w", err)
 		}
 
