@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/crazywolf132/sage/internal/gitutils"
 )
@@ -17,9 +16,11 @@ var startCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		branchName := args[0]
 
-		// 1. Determine the default branch from config, fallback to "main"
-		defaultBranch := viper.GetString("defaultBranch")
-		if defaultBranch == "" {
+		// 1. Determine the default branch
+		defaultBranch, err := gitutils.GetDefaultBranch()
+		if err != nil {
+			fmt.Println("Warning: Failed to determine default branch:", err)
+			// Fallback to main if we can't determine default branch
 			defaultBranch = "main"
 		}
 

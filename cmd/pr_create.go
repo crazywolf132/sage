@@ -95,7 +95,13 @@ var prCreateCmd = &cobra.Command{
 
 		// default base if none provided
 		if prBase == "" {
-			prBase = "main"
+			defaultBranch, err := gitutils.GetDefaultBranch()
+			if err != nil {
+				fmt.Println("Warning: Failed to determine default branch:", err)
+				// Fallback to main if we can't determine default branch
+				defaultBranch = "main"
+			}
+			prBase = defaultBranch
 		}
 
 		// Handle draft PR settings
