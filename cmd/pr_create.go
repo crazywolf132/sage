@@ -124,7 +124,13 @@ var prCreateCmd = &cobra.Command{
 			return fmt.Errorf("base branch cannot be empty")
 		}
 
-		// 4. build create params
+		// Ensure all changes are pushed before creating PR
+		fmt.Printf("Pushing latest changes to %s...\n", currentBranch)
+		if err := gitutils.RunGitCommand("push", "-u", "origin", currentBranch); err != nil {
+			return fmt.Errorf("failed to push changes: %w", err)
+		}
+
+		// Build create params
 		prParams := githubutils.CreatePRParams{
 			Title: prTitle,
 			Head:  currentBranch,
@@ -133,16 +139,8 @@ var prCreateCmd = &cobra.Command{
 			Draft: prDraft,
 		}
 
-		// Log the PR parameters for debugging
-		fmt.Printf("Creating PR with parameters:\n"+
-			"  Title: %s\n"+
-			"  Head: %s\n"+
-			"  Base: %s\n"+
-			"  Body length: %d\n"+
-			"  Draft: %v\n",
-			prParams.Title, prParams.Head, prParams.Base, len(prParams.Body), prParams.Draft)
-
-		// 5. make the API call
+		// Create the pull request
+		fmt.Println("Creating pull request...")
 		pr, err := githubutils.CreatePullRequest(token, owner, repo, prParams)
 		if err != nil {
 			return fmt.Errorf("failed to create PR: %w", err)
@@ -153,9 +151,10 @@ var prCreateCmd = &cobra.Command{
 			fmt.Println("Warning: Failed to delete PR form backup:", err)
 		}
 
-		fmt.Printf("Pull Request created! #%d\nURL: %s\n", pr.Number, pr.HTMLURL)
+		fmt.Printf("\n✨ Pull Request #%d created successfully!\n", pr.Number)
+		fmt.Printf("🔗 %s\n", pr.HTMLURL)
 		if pr.Draft {
-			fmt.Println("Note: This PR was created as a draft.")
+			fmt.Println("📝 Created as draft")
 		}
 		return nil
 	},
