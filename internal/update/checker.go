@@ -63,11 +63,7 @@ func CheckForUpdates() error {
 
 	// If we have a different SHA and it's not the first run (empty lastKnownSHA)
 	if lastKnownSHA != "" && latestSHA != lastKnownSHA {
-		fmt.Printf("\n%s %s\n",
-			ui.ColoredText("●", ui.Yellow),
-			ui.ColoredText("A new version of sage is available!", ui.White))
-		fmt.Printf("   Run %s to update\n\n",
-			ui.ColoredText("go install github.com/crazywolf132/sage@latest", ui.Blue))
+		ui.DrawBox("A new version of sage is available!\ngo install github.com/crazywolf132/sage@latest")
 	}
 
 	return nil
