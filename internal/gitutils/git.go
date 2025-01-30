@@ -174,3 +174,37 @@ func IsWorkingTreeClean() (bool, error) {
 
 	return output == "", nil
 }
+
+func GetDefaultBranch() (string, error) {
+	// Check remote HEAD
+	if out, err := RunGitCommandWithOutput("symbolic-ref", "refs/remotes/origin/HEAD"); err == nil {
+		parts := strings.Split(strings.TrimSpace(out), "/")
+		return parts[len(parts)-1], nil
+	}
+
+	// Fallback to checking common branch names
+	if err := RunGitCommand("show-ref", "--verify", "refs/heads/main"); err == nil {
+		return "main", nil
+	}
+	if err := RunGitCommand("show-ref", "--verify", "refs/heads/master"); err == nil {
+		return "master", nil
+	}
+
+	return "", fmt.Errorf("could not determine default branch")
+}
+
+func GetMergedBranches(target string) ([]string, error) {
+	out, err := RunGitCommandWithOutput("branch", "--merged", target)
+	if err != nil {
+		return nil, err
+	}
+
+	var branches []string
+	for _, line := range strings.Split(out, "\n") {
+		branch := strings.TrimSpace(strings.TrimPrefix(line, "* "))
+		if branch != "" {
+			branches = append(branches, branch)
+		}
+	}
+	return branches, nil
+}

@@ -177,7 +177,6 @@ func MergePullRequest(token, owner, repo string, number int, method string) erro
 
 // CheckoutPullRequest checks out a PR branch locally using the PR's head reference.
 func CheckoutPullRequest(token, owner, repo string, number int) error {
-	// First, get the PR details to get the head reference
 	pr, err := GetPullRequest(token, owner, repo, number)
 	if err != nil {
 		return fmt.Errorf("failed to get PR details: %w", err)
@@ -189,23 +188,24 @@ func CheckoutPullRequest(token, owner, repo string, number int) error {
 		return fmt.Errorf("failed to fetch PR %d: %w", number, err)
 	}
 
-	// Create and checkout a new branch with the PR number
-	branchName := fmt.Sprintf("pr-%d", number)
-	checkoutCmd := exec.Command("git", "checkout", "-b", branchName, "origin/"+pr.Head.Ref)
+	branchName := pr.Head.Ref
+
+	// Try to checkout with tracking
+	checkoutCmd := exec.Command("git", "checkout", "-b", branchName, "--track", "origin/"+pr.Head.Ref)
 	if err := checkoutCmd.Run(); err != nil {
-		// If branch exists, try to check it out directly
-		checkoutCmd = exec.Command("git", "checkout", branchName)
-		if err := checkoutCmd.Run(); err != nil {
+		// Branch might already exist, try resetting it
+		checkoutExisting := exec.Command("git", "checkout", branchName)
+		if checkoutExisting.Run() != nil {
 			return fmt.Errorf("failed to checkout branch %s: %w", branchName, err)
+		}
+
+		resetCmd := exec.Command("git", "reset", "--hard", "origin/"+pr.Head.Ref)
+		if resetCmd.Run() != nil {
+			return fmt.Errorf("failed to reset branch %s: %w", branchName, err)
 		}
 	}
 
-	// Set up tracking branch
-	trackCmd := exec.Command("git", "branch", "--set-upstream-to", "origin/"+pr.Head.Ref, branchName)
-	if err := trackCmd.Run(); err != nil {
-		return fmt.Errorf("failed to set upstream branch: %w", err)
-	}
-
+	fmt.Printf("Checked out PR #%d as '%s'\n", number, branchName)
 	return nil
 }
 

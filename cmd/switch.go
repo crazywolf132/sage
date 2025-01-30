@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/crazywolf132/sage/internal/gitutils"
@@ -17,31 +18,22 @@ var switchCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// If no branch name provided, show interactive branch selection
 		if len(args) == 0 {
-			// Get list of all branches
 			branches, err := gitutils.GetBranches()
 			if err != nil {
 				return err
 			}
 
-			// Prepare the survey
 			var selectedBranch string
 			prompt := &survey.Select{
 				Message: "Choose a branch to switch to:",
 				Options: branches,
 			}
 
-			// Show the interactive prompt
 			if err := survey.AskOne(prompt, &selectedBranch); err != nil {
 				return err
 			}
 
-			// Switch to the selected branch
-			if err := gitutils.RunGitCommand("checkout", selectedBranch); err != nil {
-				return err
-			}
-
-			fmt.Printf("Switched to branch '%s'\n", selectedBranch)
-			return nil
+			args = []string{selectedBranch}
 		}
 
 		// Branch name provided
@@ -58,6 +50,15 @@ var switchCmd = &cobra.Command{
 			if err := gitutils.RunGitCommand("checkout", branchName); err != nil {
 				return err
 			}
+
+			// check if upstream exists and pull
+			// Check if upstream exists and pull
+			if upstream, err := gitutils.DefaultRunner.RunGitCommandWithOutput("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"); err == nil {
+				if err := gitutils.RunGitCommand("pull"); err != nil {
+					fmt.Printf("Warning: Failed to pull changes from %s\n", strings.TrimSpace(upstream))
+				}
+			}
+
 			fmt.Printf("Switched to branch '%s'\n", branchName)
 			return nil
 		}
