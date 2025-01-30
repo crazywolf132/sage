@@ -14,6 +14,7 @@ type GitRunner interface {
 	IsRebaseInProgress() (bool, error)
 	GetBranches() ([]string, error)
 	BranchExists(branchName string) (bool, error)
+	GetFirstCommitOnBranch() (string, error)
 }
 
 // MockGitRunner is a mock implementation of GitRunner
@@ -76,4 +77,10 @@ func (m *MockGitRunner) RunGitCommandWithOutput(args ...string) (string, error) 
 	}
 	args2 := m.Called(iargs...)
 	return args2.String(0), args2.Error(1)
+}
+
+// GetFirstCommitOnBranch is a mock implementation
+func (m *MockGitRunner) GetFirstCommitOnBranch() (string, error) {
+	args := m.Called()
+	return args.String(0), args.Error(1)
 }

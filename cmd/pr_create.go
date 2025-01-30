@@ -46,6 +46,12 @@ var prCreateCmd = &cobra.Command{
 
 		// If title is not provided via flag, use the interactive form
 		if prTitle == "" {
+			// Try to get the first commit message as a title placeholder
+			firstCommit, err := gitutils.GetFirstCommitOnBranch()
+			if err != nil {
+				fmt.Println("Warning: Failed to get first commit message:", err)
+			}
+
 			// Get PR template if requested and available
 			var templateContent string
 			if useTemplate {
@@ -55,14 +61,34 @@ var prCreateCmd = &cobra.Command{
 				}
 			}
 
-			// Pre-populate the form with the template if available
-			form, err := ui.GetPRDetails(templateContent)
+			// Try to load backup if it exists
+			backup, err := ui.LoadPRFormBackup()
+			if err != nil {
+				fmt.Println("Warning: Failed to load PR form backup:", err)
+			}
+
+			// Pre-populate the form with backup, template, or first commit
+			form := ui.PRForm{
+				Title: firstCommit, // Use first commit as default title
+				Body:  templateContent,
+			}
+			if backup != nil {
+				form = *backup
+			}
+
+			// Get PR details through the form
+			form, err = ui.GetPRDetails(form.Body)
 			if err != nil {
 				return err
 			}
 			prTitle = form.Title
 			if prBody == "" {
 				prBody = form.Body
+			}
+
+			// Backup the form data
+			if err := ui.BackupPRForm(form); err != nil {
+				fmt.Println("Warning: Failed to backup PR form:", err)
 			}
 		}
 
@@ -80,6 +106,11 @@ var prCreateCmd = &cobra.Command{
 			}
 		}
 
+		// Ensure we have required fields to avoid 422 errors
+		if prTitle == "" {
+			return fmt.Errorf("PR title cannot be empty")
+		}
+
 		// 4. build create params
 		prParams := githubutils.CreatePRParams{
 			Title: prTitle,
@@ -92,7 +123,12 @@ var prCreateCmd = &cobra.Command{
 		// 5. make the API call
 		pr, err := githubutils.CreatePullRequest(token, owner, repo, prParams)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create PR: %w", err)
+		}
+
+		// Clean up the backup file since PR was created successfully
+		if err := ui.DeletePRFormBackup(); err != nil {
+			fmt.Println("Warning: Failed to delete PR form backup:", err)
 		}
 
 		fmt.Printf("Pull Request created! #%d\nURL: %s\n", pr.Number, pr.HTMLURL)

@@ -208,3 +208,31 @@ func GetMergedBranches(target string) ([]string, error) {
 	}
 	return branches, nil
 }
+
+// GetFirstCommitOnBranch returns the first commit message on the current branch
+func (g *RealGitRunner) GetFirstCommitOnBranch() (string, error) {
+	// Get the base branch (main or master)
+	baseBranch, err := GetDefaultBranch()
+	if err != nil {
+		return "", err
+	}
+
+	// Get the first commit on the current branch that's not in the base branch
+	output, err := g.RunGitCommandWithOutput("log", "--format=%s", fmt.Sprintf("%s..HEAD", baseBranch), "--reverse")
+	if err != nil {
+		return "", err
+	}
+
+	// Split by newlines and get the first line
+	commits := strings.Split(output, "\n")
+	if len(commits) == 0 || commits[0] == "" {
+		return "", fmt.Errorf("no commits found on current branch")
+	}
+
+	return commits[0], nil
+}
+
+// GetFirstCommitOnBranch is a package-level function that delegates to DefaultRunner
+func GetFirstCommitOnBranch() (string, error) {
+	return DefaultRunner.GetFirstCommitOnBranch()
+}

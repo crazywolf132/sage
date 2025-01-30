@@ -1,7 +1,10 @@
 package ui
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/charmbracelet/huh"
 )
@@ -98,6 +101,7 @@ func GetPRDetails(template string) (PRForm, error) {
 				Title("Body").
 				Value(&form.Body).
 				CharLimit(4000).
+				Editor("vi").
 				Validate(func(s string) error {
 					if len(s) < 10 {
 						return fmt.Errorf("PR description should be at least 10 characters")
@@ -108,4 +112,64 @@ func GetPRDetails(template string) (PRForm, error) {
 	).Run()
 
 	return form, err
+}
+
+// BackupPRForm saves the form data to a backup file
+func BackupPRForm(form PRForm) error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	backupDir := filepath.Join(homeDir, ".sage", "backups")
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		return err
+	}
+
+	backupFile := filepath.Join(backupDir, "pr_form_backup.json")
+	data, err := json.Marshal(form)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(backupFile, data, 0644)
+}
+
+// LoadPRFormBackup loads the form data from the backup file
+func LoadPRFormBackup() (*PRForm, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+
+	backupFile := filepath.Join(homeDir, ".sage", "backups", "pr_form_backup.json")
+	data, err := os.ReadFile(backupFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var form PRForm
+	if err := json.Unmarshal(data, &form); err != nil {
+		return nil, err
+	}
+
+	return &form, nil
+}
+
+// DeletePRFormBackup deletes the PR form backup file
+func DeletePRFormBackup() error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	backupFile := filepath.Join(homeDir, ".sage", "backups", "pr_form_backup.json")
+	err = os.Remove(backupFile)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
