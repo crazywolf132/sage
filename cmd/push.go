@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/crazywolf132/sage/internal/gitutils"
 	"github.com/spf13/cobra"
 )
@@ -11,50 +11,56 @@ import (
 // pushCmd represents "sage push"
 var pushCmd = &cobra.Command{
 	Use:   "push",
-	Short: "Push the current branch to the remote",
+	Short: "Push changes to remote",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		force, _ := cmd.Flags().GetBool("force")
+		// Get current branch
 		currentBranch, err := gitutils.GetCurrentBranch()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get current branch: %w", err)
 		}
 
+		// Check if force push is requested
+		force, _ := cmd.Flags().GetBool("force")
+		skipConfirm, _ := cmd.Flags().GetBool("yes")
+
 		if force {
-			// Confirm destructive action
-			confirm, _ := cmd.Flags().GetBool("yes")
-			if !confirm {
-				// This is a quick text-based "are you sure?" approach.
-				// In production, you might want a more robust prompt or skip if --yes is provided.
-				fmt.Printf("You are about to force push branch '%s'. Type 'yes' to confirm: ", currentBranch)
-				fmt.Print("Do you want to continue? [y/N]: ")
-				var userInput string
-				if _, err := fmt.Scanln(&userInput); err != nil {
-					return fmt.Errorf("failed to read user input: %w", err)
+			if !skipConfirm {
+				fmt.Printf("⚠️  Warning: You're about to force push to '%s'\n", currentBranch)
+				fmt.Println("   This will overwrite remote history!")
+
+				var confirm bool
+				prompt := &survey.Confirm{
+					Message: "Are you sure you want to continue?",
 				}
-				if strings.ToLower(userInput) != "yes" {
-					fmt.Println("Force push aborted.")
+				if err := survey.AskOne(prompt, &confirm); err != nil {
+					return err
+				}
+				if !confirm {
+					fmt.Println("   Operation cancelled")
 					return nil
 				}
 			}
 
+			fmt.Printf("\n🔄 Force pushing to '%s'...\n", currentBranch)
+
 			// Create a backup reference before force push
 			backupRef := fmt.Sprintf("sage/backup/%s", currentBranch)
 			if err := gitutils.RunGitCommand("tag", backupRef); err == nil {
-				fmt.Printf("Created backup reference: %s\n", backupRef)
+				fmt.Printf("   💾 Created backup reference: %s\n", backupRef)
 			}
 
 			if err := gitutils.RunGitCommand("push", "--force", "origin", currentBranch); err != nil {
-				return err
+				return fmt.Errorf("failed to force push: %w", err)
 			}
-			fmt.Printf("Force push completed for branch '%s'\n", currentBranch)
-			return nil
+		} else {
+			fmt.Printf("\n🔄 Pushing to '%s'...\n", currentBranch)
+			if err := gitutils.RunGitCommand("push", "origin", currentBranch); err != nil {
+				return fmt.Errorf("failed to push: %w", err)
+			}
 		}
 
-		// Normal push
-		if err := gitutils.RunGitCommand("push", "origin", currentBranch); err != nil {
-			return err
-		}
-		fmt.Printf("Pushed branch '%s' to origin\n", currentBranch)
+		fmt.Printf("\n✨ Changes published!\n")
+		fmt.Printf("   Branch '%s' is up to date\n", currentBranch)
 		return nil
 	},
 }

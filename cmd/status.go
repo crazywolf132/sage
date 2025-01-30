@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/crazywolf132/sage/internal/gitutils"
-	"github.com/crazywolf132/sage/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -45,21 +44,27 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get upstream status
-	upstream, _ := gitutils.RunGitCommandWithOutput("rev-list", "--count", "--left-right", "@{u}...HEAD")
+	ahead, behind := 0, 0
+	if upstream, err := gitutils.RunGitCommandWithOutput("rev-list", "--left-right", "--count", "@{u}...HEAD"); err == nil {
+		fmt.Sscanf(upstream, "%d\t%d", &behind, &ahead)
+	}
 
 	// Print status in beautiful format
-	printStatus(branch, status, upstream)
+	fmt.Printf("\n📊 Repository Status\n")
+	fmt.Printf("   ⎇  %s\n", branch)
 
-	return nil
-}
-
-func printStatus(branch, status, upstream string) {
-	// Print branch information
-	fmt.Printf("\n%s %s\n", ui.ColoredText("⎇", ui.Blue), ui.ColoredText(branch, ui.Sage))
+	if ahead > 0 || behind > 0 {
+		if ahead > 0 {
+			fmt.Printf("   ⬆️  %d commit(s) ahead\n", ahead)
+		}
+		if behind > 0 {
+			fmt.Printf("   ⬇️  %d commit(s) behind\n", behind)
+		}
+	}
 
 	// Parse and print status
 	if status != "" {
-		fmt.Println("\nChanges:")
+		fmt.Println("\n   Changes:")
 		lines := strings.Split(strings.TrimSpace(status), "\n")
 		for _, line := range lines {
 			if len(line) < 4 {
@@ -70,52 +75,42 @@ func printStatus(branch, status, upstream string) {
 			printStatusLine(statusCode, filePath)
 		}
 	} else {
-		fmt.Println(ui.ColoredText("\n✓ Working tree clean", ui.Sage))
+		fmt.Println("\n   ✨ Working tree clean")
 	}
 
-	// Print upstream status if available
-	if upstream != "" {
-		parts := strings.Split(upstream, "\t")
-		if len(parts) == 2 {
-			behind := parts[0]
-			ahead := parts[1]
-			if behind != "0" {
-				fmt.Printf("\n%s commits behind", behind)
-			}
-			if ahead != "0" {
-				fmt.Printf("\n%s commits ahead", ahead)
-			}
-		}
-	}
-	fmt.Println()
+	fmt.Println() // Add final newline
+	return nil
 }
 
 func printStatusLine(statusCode, filePath string) {
-	var symbol, color string
+	var symbol, description string
 
 	switch statusCode {
-	case " M": // Modified
+	case "M ", " M":
 		symbol = "📝"
-		color = ui.Yellow
-	case "M ": // Staged modified
-		symbol = "✓"
-		color = ui.Sage
-	case "A ": // Added
-		symbol = "➕"
-		color = ui.Sage
-	case " D": // Deleted
-		symbol = "❌"
-		color = ui.Red
-	case "D ": // Staged deleted
-		symbol = "🗑️"
-		color = ui.Red
-	case "??": // Untracked
+		description = "Modified"
+	case "A ", "AM":
+		symbol = "✨"
+		description = "Added"
+	case "D ", " D":
+		symbol = "🗑️ "
+		description = "Deleted"
+	case "R ":
+		symbol = "📋"
+		description = "Renamed"
+	case "C ":
+		symbol = "📑"
+		description = "Copied"
+	case "??":
 		symbol = "❓"
-		color = ui.Blue
+		description = "Untracked"
+	case "UU":
+		symbol = "⚠️ "
+		description = "Conflict"
 	default:
-		symbol = "•"
-		color = ui.White
+		symbol = "  "
+		description = "Unknown"
 	}
 
-	fmt.Printf("%s %s\n", symbol, ui.ColoredText(filePath, color))
+	fmt.Printf("      %s %s (%s)\n", symbol, filePath, description)
 }

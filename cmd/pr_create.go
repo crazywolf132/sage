@@ -49,7 +49,7 @@ var prCreateCmd = &cobra.Command{
 			// Try to load backup first
 			backup, err := ui.LoadPRFormBackup()
 			if err != nil {
-				fmt.Println("Warning: Failed to load PR form backup:", err)
+				fmt.Println("⚠️  Failed to load PR form backup")
 			}
 
 			// Get PR template if requested and available
@@ -57,7 +57,7 @@ var prCreateCmd = &cobra.Command{
 			if useTemplate {
 				templateContent, err = githubutils.GetPullRequestTemplate(token, owner, repo)
 				if err != nil {
-					fmt.Println("Warning: Failed to fetch PR template:", err)
+					fmt.Println("⚠️  Failed to fetch PR template")
 				}
 			}
 
@@ -69,7 +69,7 @@ var prCreateCmd = &cobra.Command{
 				// Try to get the first commit message as a title placeholder
 				firstCommit, err := gitutils.GetFirstCommitOnBranch()
 				if err != nil {
-					fmt.Println("Warning: Failed to get first commit message:", err)
+					fmt.Println("⚠️  Failed to get first commit message")
 				} else {
 					form.Title = firstCommit
 				}
@@ -89,7 +89,7 @@ var prCreateCmd = &cobra.Command{
 
 			// Backup the form data
 			if err := ui.BackupPRForm(form); err != nil {
-				fmt.Println("Warning: Failed to backup PR form:", err)
+				fmt.Println("⚠️  Failed to backup PR form")
 			}
 		}
 
@@ -97,8 +97,7 @@ var prCreateCmd = &cobra.Command{
 		if prBase == "" {
 			defaultBranch, err := gitutils.GetDefaultBranch()
 			if err != nil {
-				fmt.Println("Warning: Failed to determine default branch:", err)
-				// Fallback to main if we can't determine default branch
+				fmt.Println("⚠️  Could not determine default branch, using 'main'")
 				defaultBranch = "main"
 			}
 			prBase = defaultBranch
@@ -125,7 +124,7 @@ var prCreateCmd = &cobra.Command{
 		}
 
 		// Ensure all changes are pushed before creating PR
-		fmt.Printf("Pushing latest changes to %s...\n", currentBranch)
+		fmt.Printf("⬆️  Publishing changes to %s...\n", currentBranch)
 		if err := gitutils.RunGitCommand("push", "-u", "origin", currentBranch); err != nil {
 			return fmt.Errorf("failed to push changes: %w", err)
 		}
@@ -140,7 +139,7 @@ var prCreateCmd = &cobra.Command{
 		}
 
 		// Create the pull request
-		fmt.Println("Creating pull request...")
+		fmt.Println("🚀 Creating pull request...")
 		pr, err := githubutils.CreatePullRequest(token, owner, repo, prParams)
 		if err != nil {
 			return fmt.Errorf("failed to create PR: %w", err)
@@ -148,13 +147,14 @@ var prCreateCmd = &cobra.Command{
 
 		// Clean up the backup file since PR was created successfully
 		if err := ui.DeletePRFormBackup(); err != nil {
-			fmt.Println("Warning: Failed to delete PR form backup:", err)
+			fmt.Println("⚠️  Failed to delete PR form backup")
 		}
 
-		fmt.Printf("\n✨ Pull Request #%d created successfully!\n", pr.Number)
-		fmt.Printf("🔗 %s\n", pr.HTMLURL)
+		fmt.Printf("\n✨ Pull Request created!\n")
+		fmt.Printf("   #%d: %s\n", pr.Number, prTitle)
+		fmt.Printf("   %s\n", pr.HTMLURL)
 		if pr.Draft {
-			fmt.Println("📝 Created as draft")
+			fmt.Println("   📝 Created as draft")
 		}
 		return nil
 	},

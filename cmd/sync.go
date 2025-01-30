@@ -16,32 +16,23 @@ var (
 // syncCmd represents "sage sync"
 var syncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Sync current branch with parent branch",
-	Long: `Sync will:
-1. Check if the working tree is clean
-2. Switch to parent branch and update it
-3. Return to feature branch and merge parent
-4. Handle any merge conflicts`,
-	SilenceUsage:  true,
-	SilenceErrors: true,
+	Short: "Sync current branch with default branch",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if abortSync && continueSync {
-			return fmt.Errorf("cannot specify both --abort and --continue")
-		}
-
-		// Get current branch name
-		currentBranch, err := gitutils.GetCurrentBranch()
+		// Get current branch
+		currentBranch, err := gitutils.DefaultRunner.GetCurrentBranch()
 		if err != nil {
 			return fmt.Errorf("failed to get current branch: %w", err)
 		}
 
 		// Handle sync continue
 		if continueSync {
+			fmt.Printf("\n🔄 Continuing merge...\n")
 			return handleSyncContinue(currentBranch)
 		}
 
 		// Handle sync abort
 		if abortSync {
+			fmt.Printf("\n🔄 Aborting merge...\n")
 			return handleSyncAbort(currentBranch)
 		}
 
@@ -60,31 +51,33 @@ var syncCmd = &cobra.Command{
 			return fmt.Errorf("failed to determine parent branch: %w", err)
 		}
 
+		fmt.Printf("\n🔄 Syncing with %s...\n", parentBranch)
+
 		// Switch to parent branch
-		fmt.Printf("Switching to %s...\n", parentBranch)
+		fmt.Printf("   ⎇  Switching to %s\n", parentBranch)
 		if err := gitutils.DefaultRunner.RunGitCommand("switch", parentBranch); err != nil {
 			return fmt.Errorf("failed to switch to parent branch: %w", err)
 		}
 
 		// Update parent branch
-		fmt.Println("Fetching latest changes...")
+		fmt.Println("   📡 Fetching latest changes")
 		if err := gitutils.DefaultRunner.RunGitCommand("fetch", "--all", "--prune"); err != nil {
 			return fmt.Errorf("failed to fetch: %w", err)
 		}
 
-		fmt.Printf("Pulling latest changes for %s...\n", parentBranch)
+		fmt.Printf("   ⬇️  Pulling latest changes\n")
 		if err := gitutils.DefaultRunner.RunGitCommand("pull"); err != nil {
 			return fmt.Errorf("failed to pull: %w", err)
 		}
 
 		// Switch back to feature branch
-		fmt.Printf("Switching back to %s...\n", currentBranch)
+		fmt.Printf("   ⎇  Switching back to %s\n", currentBranch)
 		if err := gitutils.DefaultRunner.RunGitCommand("switch", currentBranch); err != nil {
 			return fmt.Errorf("failed to switch back to feature branch: %w", err)
 		}
 
 		// Merge parent branch
-		fmt.Printf("Merging %s into %s...\n", parentBranch, currentBranch)
+		fmt.Printf("   🔄 Merging changes from %s\n", parentBranch)
 		err = gitutils.DefaultRunner.RunGitCommand("merge", parentBranch)
 		if err != nil {
 			// Check if there are merge conflicts
@@ -94,18 +87,23 @@ var syncCmd = &cobra.Command{
 			}
 
 			if len(conflicts) > 0 {
-				fmt.Println("\nMerge conflicts detected in the following files:")
+				fmt.Println("\n⚠️  Merge conflicts detected!")
+				fmt.Println("   The following files need attention:")
 				for _, conflict := range conflicts {
-					fmt.Printf("  - %s\n", conflict)
+					fmt.Printf("   • %s\n", conflict)
 				}
-				fmt.Println("\nResolve the conflicts and run 'sage sync -c' to continue")
-				fmt.Println("Or run 'sage sync -a' to abort the merge")
+				fmt.Println("\n   To resolve:")
+				fmt.Println("   1. Fix conflicts in your editor")
+				fmt.Println("   2. Stage resolved files")
+				fmt.Println("   3. Run 'sage sync -c' to continue")
+				fmt.Println("   Or run 'sage sync -a' to abort")
 				return nil
 			}
 			return fmt.Errorf("merge failed: %w", err)
 		}
 
-		fmt.Printf("Successfully synced %s with %s\n", currentBranch, parentBranch)
+		fmt.Printf("\n✨ Branch synced successfully!\n")
+		fmt.Printf("   %s is up to date with %s\n", currentBranch, parentBranch)
 		return nil
 	},
 }
@@ -121,6 +119,7 @@ func handleSyncContinue(currentBranch string) error {
 	}
 
 	// Stage all files
+	fmt.Println("   📝 Staging resolved files")
 	if err := gitutils.DefaultRunner.RunGitCommand("add", "."); err != nil {
 		return fmt.Errorf("failed to stage files: %w", err)
 	}
@@ -137,11 +136,13 @@ func handleSyncContinue(currentBranch string) error {
 	commitMsg := fmt.Sprintf("merge(%s): merged %s updates", parentBranch, parentBranch)
 
 	// Complete the merge with our custom message
+	fmt.Println("   ✨ Completing merge")
 	if err := gitutils.DefaultRunner.RunGitCommand("commit", "-m", commitMsg); err != nil {
 		return fmt.Errorf("failed to complete merge: %w", err)
 	}
 
-	fmt.Printf("Successfully completed merge on %s\n", currentBranch)
+	fmt.Printf("\n✨ Merge completed!\n")
+	fmt.Printf("   %s\n", commitMsg)
 	return nil
 }
 
@@ -156,11 +157,13 @@ func handleSyncAbort(currentBranch string) error {
 	}
 
 	// Abort the merge
+	fmt.Println("   🔄 Aborting merge operation")
 	if err := gitutils.DefaultRunner.RunGitCommand("merge", "--abort"); err != nil {
 		return fmt.Errorf("failed to abort merge: %w", err)
 	}
 
-	fmt.Printf("Successfully aborted merge on %s\n", currentBranch)
+	fmt.Printf("\n✨ Merge aborted!\n")
+	fmt.Printf("   Branch '%s' restored to previous state\n", currentBranch)
 	return nil
 }
 

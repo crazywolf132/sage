@@ -7,7 +7,6 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/crazywolf132/sage/internal/gitutils"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 // switchCmd represents "sage switch [branch-name]"
@@ -46,20 +45,22 @@ var switchCmd = &cobra.Command{
 		}
 
 		if exists {
+			fmt.Printf("\n🔄 Switching to '%s'...\n", branchName)
 			// Switch to existing branch
 			if err := gitutils.RunGitCommand("switch", branchName); err != nil {
-				return err
+				return fmt.Errorf("failed to switch branch: %w", err)
 			}
 
-			// check if upstream exists and pull
 			// Check if upstream exists and pull
 			if upstream, err := gitutils.DefaultRunner.RunGitCommandWithOutput("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"); err == nil {
+				fmt.Println("   ⬇️  Pulling latest changes")
 				if err := gitutils.RunGitCommand("pull"); err != nil {
-					fmt.Printf("Warning: Failed to pull changes from %s\n", strings.TrimSpace(upstream))
+					fmt.Printf("   ⚠️  Failed to pull from %s\n", strings.TrimSpace(upstream))
 				}
 			}
 
-			fmt.Printf("Switched to branch '%s'\n", branchName)
+			fmt.Printf("\n✨ Switched to branch!\n")
+			fmt.Printf("   %s\n", branchName)
 			return nil
 		}
 
@@ -74,29 +75,38 @@ var switchCmd = &cobra.Command{
 		}
 
 		if !createBranch {
-			fmt.Println("Operation cancelled.")
+			fmt.Println("   Operation cancelled")
 			return nil
 		}
 
 		// Create new branch from default branch
-		defaultBranch := viper.GetString("defaultBranch")
-		if defaultBranch == "" {
+		defaultBranch, err := gitutils.GetDefaultBranch()
+		if err != nil {
+			fmt.Println("⚠️  Could not determine default branch, using 'main'")
 			defaultBranch = "main"
 		}
 
+		fmt.Printf("\n🔄 Creating new branch...\n")
+
 		// Checkout default branch and pull latest
+		fmt.Printf("   ⎇  Switching to %s\n", defaultBranch)
 		if err := gitutils.RunGitCommand("switch", defaultBranch); err != nil {
-			return err
+			return fmt.Errorf("failed to switch to default branch: %w", err)
 		}
+
+		fmt.Println("   ⬇️  Pulling latest changes")
 		if err := gitutils.RunGitCommand("pull"); err != nil {
-			return err
+			return fmt.Errorf("failed to pull latest changes: %w", err)
 		}
 
 		// Create and switch to new branch
+		fmt.Printf("   🌱 Creating branch '%s'\n", branchName)
 		if err := gitutils.RunGitCommand("switch", "-c", branchName); err != nil {
-			return err
+			return fmt.Errorf("failed to create branch: %w", err)
 		}
-		fmt.Printf("Created and switched to new branch '%s'\n", branchName)
+
+		fmt.Printf("\n✨ Branch created and switched!\n")
+		fmt.Printf("   %s\n", branchName)
 
 		return nil
 	},

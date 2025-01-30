@@ -35,8 +35,7 @@ var startCmd = &cobra.Command{
 		// 1. Determine the default branch
 		defaultBranch, err := gitutils.GetDefaultBranch()
 		if err != nil {
-			fmt.Println("Warning: Failed to determine default branch:", err)
-			// Fallback to main if we can't determine default branch
+			fmt.Println("⚠️  Could not determine default branch, using 'main'")
 			defaultBranch = "main"
 		}
 
@@ -46,8 +45,7 @@ var startCmd = &cobra.Command{
 			return err
 		}
 		if !clean {
-			fmt.Println("\033[33mWARNING: You have uncommitted changes.\033[0m")
-			// Optionally ask to stash or commit before proceeding.
+			fmt.Println("⚠️  You have uncommitted changes")
 		}
 
 		// 3. Check for upstream remote
@@ -56,20 +54,23 @@ var startCmd = &cobra.Command{
 			return fmt.Errorf("failed to check for upstream remote: %w", err)
 		}
 
+		fmt.Printf("\n🔄 Setting up branch '%s'...\n", branchName)
+
 		// 4. Fetch from all remotes
-		fmt.Println("Fetching latest changes from remote(s)...")
+		fmt.Println("   📡 Fetching latest changes")
 		if err := gitutils.RunGitCommand("fetch", "--all", "--prune"); err != nil {
 			return fmt.Errorf("failed to fetch from remotes: %w", err)
 		}
 
 		// 5. Checkout default branch
+		fmt.Printf("   ⎇  Switching to %s\n", defaultBranch)
 		if err := gitutils.RunGitCommand("switch", defaultBranch); err != nil {
 			return fmt.Errorf("failed to switch to %s: %w", defaultBranch, err)
 		}
 
 		// 6. If this is a fork, sync with upstream first
 		if hasUpstream {
-			fmt.Printf("Fork detected. Syncing %s with upstream...\n", defaultBranch)
+			fmt.Printf("   🔄 Syncing with upstream/%s\n", defaultBranch)
 			// Fetch and merge from upstream
 			if err := gitutils.RunGitCommand("fetch", "upstream"); err != nil {
 				return fmt.Errorf("failed to fetch from upstream: %w", err)
@@ -78,32 +79,38 @@ var startCmd = &cobra.Command{
 				return fmt.Errorf("failed to merge upstream changes: %w", err)
 			}
 			// Push changes to origin to keep fork in sync
-			fmt.Printf("Pushing synced changes to origin/%s...\n", defaultBranch)
+			fmt.Printf("   ⬆️  Updating origin/%s\n", defaultBranch)
 			if err := gitutils.RunGitCommand("push", "origin", defaultBranch); err != nil {
 				return fmt.Errorf("failed to push synced changes to origin: %w", err)
 			}
 		} else {
 			// Regular pull from origin
+			fmt.Println("   ⬇️  Pulling latest changes")
 			if err := gitutils.RunGitCommand("pull"); err != nil {
 				return fmt.Errorf("failed to pull from origin: %w", err)
 			}
 		}
 
 		// 7. Create new branch and switch
+		fmt.Printf("   🌱 Creating new branch\n")
 		if err := gitutils.RunGitCommand("switch", "-c", branchName); err != nil {
 			return fmt.Errorf("failed to create branch %s: %w", branchName, err)
 		}
-		fmt.Printf("Switched to a new branch '%s'\n", branchName)
 
 		// 8. If --push is set, push branch to origin
 		doPush, _ := cmd.Flags().GetBool("push")
 		if doPush {
+			fmt.Printf("   ⬆️  Publishing to origin\n")
 			if err := gitutils.RunGitCommand("push", "-u", "origin", branchName); err != nil {
 				return fmt.Errorf("failed to push branch to origin: %w", err)
 			}
-			fmt.Printf("Branch '%s' pushed to origin\n", branchName)
 		}
 
+		fmt.Printf("\n✨ Branch created!\n")
+		fmt.Printf("   %s\n", branchName)
+		if doPush {
+			fmt.Println("   🔗 Published to origin")
+		}
 		return nil
 	},
 }
