@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/charmbracelet/huh"
@@ -81,11 +82,63 @@ func getCommitDetails(useConventional bool) (CommitForm, error) {
 	return form, err
 }
 
+// getPreferredEditor returns the user's preferred editor from environment variables
+func getPreferredEditor() string {
+	if editor := os.Getenv("SAGE_EDITOR"); editor != "" {
+		return editor
+	}
+	if editor := os.Getenv("EDITOR"); editor != "" {
+		return editor
+	}
+	return "vi" // fallback to vi if no editor is specified
+}
+
+// editInVi opens a temporary file in the preferred editor and returns the edited contents
+func editInVi(initialContent string) (string, error) {
+	// Create a temporary file
+	tmpFile, err := os.CreateTemp("", "sage-pr-*.md")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	// Write initial content
+	if _, err := tmpFile.WriteString(initialContent); err != nil {
+		return "", fmt.Errorf("failed to write to temporary file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return "", fmt.Errorf("failed to close temporary file: %w", err)
+	}
+
+	// Get the preferred editor
+	editor := getPreferredEditor()
+
+	// Open editor
+	cmd := exec.Command(editor, tmpFile.Name())
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("editor '%s' returned error: %w", editor, err)
+	}
+
+	// Read the edited content
+	content, err := os.ReadFile(tmpFile.Name())
+	if err != nil {
+		return "", fmt.Errorf("failed to read edited file: %w", err)
+	}
+
+	return string(content), nil
+}
+
 // GetPRDetails prompts the user for pull request details
 func GetPRDetails(initialForm PRForm) (PRForm, error) {
 	var form PRForm = initialForm
+	var err error
 
-	err := huh.NewForm(
+	// First get the title using huh
+	err = huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Title").
@@ -96,21 +149,25 @@ func GetPRDetails(initialForm PRForm) (PRForm, error) {
 					}
 					return nil
 				}),
-			huh.NewText().
-				Title("Body").
-				Value(&form.Body).
-				CharLimit(4000).
-				Editor("vi").
-				Validate(func(s string) error {
-					if len(s) < 10 {
-						return fmt.Errorf("PR description should be at least 10 characters")
-					}
-					return nil
-				}),
 		),
 	).Run()
 
-	return form, err
+	if err != nil {
+		return form, err
+	}
+
+	// Then edit the body using vi directly
+	form.Body, err = editInVi(form.Body)
+	if err != nil {
+		return form, fmt.Errorf("failed to edit PR body: %w", err)
+	}
+
+	// Validate the body
+	if len(form.Body) < 10 {
+		return form, fmt.Errorf("PR description should be at least 10 characters")
+	}
+
+	return form, nil
 }
 
 // BackupPRForm saves the form data to a backup file
