@@ -2,10 +2,9 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/crazywolf132/sage/internal/gitutils"
+	"github.com/crazywolf132/sage/internal/git"
 	"github.com/spf13/cobra"
 )
 
@@ -15,9 +14,14 @@ var switchCmd = &cobra.Command{
 	Short: "Switch to an existing branch or create a new one",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		repo, err := getRepo()
+		if err != nil {
+			return err
+		}
+
 		// If no branch name provided, show interactive branch selection
 		if len(args) == 0 {
-			branches, err := gitutils.GetBranches()
+			branches, err := repo.ListBranches()
 			if err != nil {
 				return err
 			}
@@ -39,7 +43,7 @@ var switchCmd = &cobra.Command{
 		branchName := args[0]
 
 		// Check if branch exists
-		exists, err := gitutils.BranchExists(branchName)
+		exists, err := repo.BranchExists(branchName, false)
 		if err != nil {
 			return err
 		}
@@ -47,15 +51,17 @@ var switchCmd = &cobra.Command{
 		if exists {
 			fmt.Printf("\n🔄 Switching to '%s'...\n", branchName)
 			// Switch to existing branch
-			if err := gitutils.RunGitCommand("switch", branchName); err != nil {
+			if _, err := repo.Switch(&git.SwitchOpts{
+				Name: branchName,
+			}); err != nil {
 				return fmt.Errorf("failed to switch branch: %w", err)
 			}
 
 			// Check if upstream exists and pull
-			if upstream, err := gitutils.DefaultRunner.RunGitCommandWithOutput("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"); err == nil {
+			if upstream, err := repo.HasRemote(branchName); err == nil && upstream {
 				fmt.Println("   ⬇️  Pulling latest changes")
-				if err := gitutils.RunGitCommand("pull"); err != nil {
-					fmt.Printf("   ⚠️  Failed to pull from %s\n", strings.TrimSpace(upstream))
+				if err := repo.Pull(); err != nil {
+					fmt.Println("   ⚠️  Failed to pull from remote")
 				}
 			}
 
@@ -80,7 +86,7 @@ var switchCmd = &cobra.Command{
 		}
 
 		// Create new branch from default branch
-		defaultBranch, err := gitutils.GetDefaultBranch()
+		defaultBranch, err := repo.DefaultBranch()
 		if err != nil {
 			fmt.Println("⚠️  Could not determine default branch, using 'main'")
 			defaultBranch = "main"
@@ -90,18 +96,21 @@ var switchCmd = &cobra.Command{
 
 		// Checkout default branch and pull latest
 		fmt.Printf("   ⎇  Switching to %s\n", defaultBranch)
-		if err := gitutils.RunGitCommand("switch", defaultBranch); err != nil {
+		if _, err := repo.Switch(&git.SwitchOpts{Name: defaultBranch}); err != nil {
 			return fmt.Errorf("failed to switch to default branch: %w", err)
 		}
 
 		fmt.Println("   ⬇️  Pulling latest changes")
-		if err := gitutils.RunGitCommand("pull"); err != nil {
+		if err := repo.Pull(); err != nil {
 			return fmt.Errorf("failed to pull latest changes: %w", err)
 		}
 
 		// Create and switch to new branch
 		fmt.Printf("   🌱 Creating branch '%s'\n", branchName)
-		if err := gitutils.RunGitCommand("switch", "-c", branchName); err != nil {
+		if _, err := repo.Switch(&git.SwitchOpts{
+			Create: true,
+			Name:   branchName,
+		}); err != nil {
 			return fmt.Errorf("failed to create branch: %w", err)
 		}
 
