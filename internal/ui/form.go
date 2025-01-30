@@ -82,9 +82,8 @@ func getCommitDetails(useConventional bool) (CommitForm, error) {
 }
 
 // GetPRDetails prompts the user for pull request details
-func GetPRDetails(template string) (PRForm, error) {
-	var form PRForm
-	form.Body = template // Set initial value before creating the form
+func GetPRDetails(initialForm PRForm) (PRForm, error) {
+	var form PRForm = initialForm
 
 	err := huh.NewForm(
 		huh.NewGroup(

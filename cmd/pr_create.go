@@ -46,10 +46,10 @@ var prCreateCmd = &cobra.Command{
 
 		// If title is not provided via flag, use the interactive form
 		if prTitle == "" {
-			// Try to get the first commit message as a title placeholder
-			firstCommit, err := gitutils.GetFirstCommitOnBranch()
+			// Try to load backup first
+			backup, err := ui.LoadPRFormBackup()
 			if err != nil {
-				fmt.Println("Warning: Failed to get first commit message:", err)
+				fmt.Println("Warning: Failed to load PR form backup:", err)
 			}
 
 			// Get PR template if requested and available
@@ -61,26 +61,27 @@ var prCreateCmd = &cobra.Command{
 				}
 			}
 
-			// Try to load backup if it exists
-			backup, err := ui.LoadPRFormBackup()
-			if err != nil {
-				fmt.Println("Warning: Failed to load PR form backup:", err)
-			}
-
-			// Pre-populate the form with backup, template, or first commit
-			form := ui.PRForm{
-				Title: firstCommit, // Use first commit as default title
-				Body:  templateContent,
-			}
+			// Initialize form with backup if it exists
+			var form ui.PRForm
 			if backup != nil {
 				form = *backup
+			} else {
+				// Try to get the first commit message as a title placeholder
+				firstCommit, err := gitutils.GetFirstCommitOnBranch()
+				if err != nil {
+					fmt.Println("Warning: Failed to get first commit message:", err)
+				} else {
+					form.Title = firstCommit
+				}
+				form.Body = templateContent
 			}
 
 			// Get PR details through the form
-			form, err = ui.GetPRDetails(form.Body)
+			form, err = ui.GetPRDetails(form)
 			if err != nil {
 				return err
 			}
+
 			prTitle = form.Title
 			if prBody == "" {
 				prBody = form.Body
@@ -106,9 +107,15 @@ var prCreateCmd = &cobra.Command{
 			}
 		}
 
-		// Ensure we have required fields to avoid 422 errors
+		// Validate required fields
 		if prTitle == "" {
 			return fmt.Errorf("PR title cannot be empty")
+		}
+		if currentBranch == "" {
+			return fmt.Errorf("current branch cannot be empty")
+		}
+		if prBase == "" {
+			return fmt.Errorf("base branch cannot be empty")
 		}
 
 		// 4. build create params
@@ -119,6 +126,15 @@ var prCreateCmd = &cobra.Command{
 			Body:  prBody,
 			Draft: prDraft,
 		}
+
+		// Log the PR parameters for debugging
+		fmt.Printf("Creating PR with parameters:\n"+
+			"  Title: %s\n"+
+			"  Head: %s\n"+
+			"  Base: %s\n"+
+			"  Body length: %d\n"+
+			"  Draft: %v\n",
+			prParams.Title, prParams.Head, prParams.Base, len(prParams.Body), prParams.Draft)
 
 		// 5. make the API call
 		pr, err := githubutils.CreatePullRequest(token, owner, repo, prParams)
