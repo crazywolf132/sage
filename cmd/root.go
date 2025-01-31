@@ -26,6 +26,10 @@ Use subcommands like commit, clean, pr, etc.`,
 	},
 }
 
+func init() {
+	rootCmd.SetUsageTemplate(ui.ColorHeadings(rootCmd.UsageTemplate()))
+}
+
 // Execute is the root entrpoint
 func Execute() error {
 	return rootCmd.Execute()

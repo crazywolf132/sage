@@ -22,4 +22,5 @@ type Service interface {
 	StatusPorcelain() (string, error)
 	ResetSoft(ref string) error
 	ListBranches() ([]string, error)
+	Log(branch string, limit int, stats, all bool) (string, error)
 }

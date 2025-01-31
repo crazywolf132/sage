@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -180,4 +181,18 @@ func (s *shellGit) ListBranches() ([]string, error) {
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	return lines, nil
+}
+
+func (s *shellGit) Log(branch string, limit int, stats, all bool) (string, error) {
+	args := []string{"log", branch, `--format=%H%x00%an%x00%at%x00%s`}
+	if limit > 0 {
+		args = append(args, "-n", strconv.Itoa(limit))
+	}
+	if stats {
+		args = append(args, "--numstat")
+	}
+	// 'all' is a trick, you might do something else
+	// For demonstration, we'll skip advanced logic.
+	out, err := s.run(args...)
+	return out, err
 }

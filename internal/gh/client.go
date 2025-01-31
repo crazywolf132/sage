@@ -2,6 +2,7 @@ package gh
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -194,6 +195,72 @@ func (p *pullRequestAPI) ListPRUnresolvedThreads(prNum int) ([]UnresolvedThread,
 		})
 	}
 	return results, nil
+}
+
+func (p *pullRequestAPI) GetPRTemplate() (string, error) {
+	// We can attempt to read from .github/PULL_REQUEST_TEMPLATE.md or other
+	// For a minimal approach, let's do an API call to /repos/:owner/:repo/contents/.github/PULL_REQUEST_TEMPLATE.md
+	filesToCheck := []string{
+		".github/PULL_REQUEST_TEMPLATE.md",
+		".github/pull_request_template.md",
+		"docs/PULL_REQUEST_TEMPLATE.md",
+		"PULL_REQUEST_TEMPLATE.md",
+	}
+	for _, f := range filesToCheck {
+		content, err := p.getContentFile(f)
+		if err == nil && content != "" {
+			return content, nil
+		}
+	}
+	return "", nil
+}
+
+func (p *pullRequestAPI) getContentFile(path string) (string, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/contents/%s", baseURL, p.owner, p.repo, path)
+	data, err := p.do("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	var resp struct {
+		Content  string `json:"content"`
+		Encoding string `json:"encoding"`
+	}
+	if e := json.Unmarshal(data, &resp); e != nil {
+		return "", e
+	}
+	if resp.Encoding == "base64" && resp.Content != "" {
+		decoded, e2 := decodeBase64(resp.Content)
+		return decoded, e2
+	}
+	return "", nil
+}
+
+func (p *pullRequestAPI) AddLabels(prNumber int, labels []string) error {
+	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d/labels", baseURL, p.owner, p.repo, prNumber)
+	payload := map[string][]string{
+		"labels": labels,
+	}
+	_, err := p.do("POST", url, payload)
+	return err
+}
+
+func (p *pullRequestAPI) RequestReviewers(prNumber int, reviewers []string) error {
+	url := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/requested_reviewers", baseURL, p.owner, p.repo, prNumber)
+	payload := map[string][]string{
+		"reviewers": reviewers,
+	}
+	_, err := p.do("POST", url, payload)
+	return err
+}
+
+// decodeBase64 is a minimal helper
+func decodeBase64(s string) (string, error) {
+	// If you want to use the built-in:
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 // runCmd is a helper to run shell commands.

@@ -2,17 +2,34 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/crazywolf132/termchroma"
+)
+
+var (
+	green  string = ""
+	red    string = ""
+	yellow string = ""
+	blue   string = ""
+	white  string = ""
+	gray   string = ""
+	sage   string = ""
+
+	bold  string = termchroma.Bold
+	reset string = termchroma.Reset
 )
 
 // Colors
-func Green(s string) string  { return "\033[32m" + s + "\033[0m" }
-func Red(s string) string    { return "\033[31m" + s + "\033[0m" }
-func Yellow(s string) string { return "\033[33m" + s + "\033[0m" }
-func Gray(s string) string   { return "\033[90m" + s + "\033[0m" }
-func Sage(s string) string   { return "\033[38;5;114m" + s + "\033[0m" }
-func Bold(s string) string   { return "\033[1m" + s + "\033[0m" }
+func Green(s string) string  { return green + s + reset }
+func Red(s string) string    { return red + s + reset }
+func Blue(s string) string   { return red + s + reset }
+func White(s string) string  { return red + s + reset }
+func Yellow(s string) string { return yellow + s + reset }
+func Gray(s string) string   { return gray + s + reset }
+func Sage(s string) string   { return sage + s + reset }
+func Bold(s string) string   { return bold + s + reset }
 
 // Logging
 func Warnf(format string, args ...interface{}) {
@@ -91,4 +108,35 @@ func nonEmpty(val interface{}) error {
 		return fmt.Errorf("cannot be empty")
 	}
 	return nil
+}
+
+func ColorHeadings(text string) string {
+	headings := []string{
+		"Usage:",
+		"Examples:",
+		"Available Commands:",
+		"Flags:",
+		"Aliases:",
+		"Additional Commands:",
+	}
+
+	// Replace each heading with its colorized version.
+	for _, heading := range headings {
+		text = strings.ReplaceAll(text, heading, fmt.Sprintf("%s%s%s%s", sage, bold, heading, reset))
+	}
+
+	text = strings.ReplaceAll(text, "{{rpad .Name .NamePadding }}", fmt.Sprintf("%s%s%s", white, "{{rpad .Name .NamePadding }}", reset))
+	text = strings.ReplaceAll(text, "{{.CommandPath}}", fmt.Sprintf("%s%s%s", white, "{{.CommandPath}}", reset))
+
+	return text
+}
+
+func init() {
+	sage, _ = termchroma.ANSIForeground("#8EA58C")
+	blue, _ = termchroma.ANSIForeground("#59B4FF")
+	yellow, _ = termchroma.ANSIForeground("#FFC402")
+	red, _ = termchroma.ANSIForeground("#FF707E")
+	white, _ = termchroma.ANSIForeground("#FFF")
+	gray, _ = termchroma.ANSIForeground("#6B737C")
+	green, _ = termchroma.ANSIForeground("#98C379")
 }

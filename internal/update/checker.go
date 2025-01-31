@@ -13,7 +13,7 @@ import (
 	"github.com/crazywolf132/sage/internal/ui"
 )
 
-const lastCommitURL = "https://api.github.com/repos/awesome/sage/commits/main"
+const lastCommitURL = "https://api.github.com/repos/sage/commits/main"
 
 type commitResp struct {
 	SHA string `json:"sha"`

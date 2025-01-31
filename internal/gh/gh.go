@@ -16,6 +16,9 @@ type Client interface {
 	GetPRDetails(num int) (*PullRequest, error)
 	CheckoutPR(num int) (string, error)
 	ListPRUnresolvedThreads(num int) ([]UnresolvedThread, error)
+	GetPRTemplate() (string, error)
+	AddLabels(num int, labels []string) error
+	RequestReviewers(num int, reviewers []string) error
 }
 
 // pullRequestAPI is a minimal data holder for GH API calls
@@ -35,7 +38,7 @@ type PullRequest struct {
 	Body    string `json:"body"`
 	Draft   bool   `json:"draft"`
 	Merged  bool   `json:"merged"`
-	Head struct {
+	Head    struct {
 		Ref string `json:"ref"`
 	} `json:"head"`
 	Base struct {
