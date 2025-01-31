@@ -1,10 +1,11 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 
-	"github.com/crazywolf132/sage/internal/githubutils"
+	"github.com/crazywolf132/sage/internal/app"
+	"github.com/crazywolf132/sage/internal/gh"
+	"github.com/crazywolf132/sage/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -12,32 +13,18 @@ var listState string
 
 var prListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List pull requests in the repository",
+	Short: "List pull requests",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		token, err := githubutils.GetGitHubToken()
-		if err != nil {
-			return err
-		}
-		if token == "" {
-			return errors.New("no GitHub token found; install GH CLI or set SAGE_GITHUB_TOKEN / GITHUB_TOKEN")
-		}
-
-		owner, repo, err := githubutils.FindRepoOwnerAndName()
-		if err != nil {
-			return err
-		}
-
+		ghc := gh.NewClient()
 		if listState == "" {
-			listState = "open" // default to open
+			listState = "open"
 		}
-
-		prs, err := githubutils.ListPullRequests(token, owner, repo, listState)
+		prs, err := app.ListPRs(ghc, listState)
 		if err != nil {
 			return err
 		}
-
 		for _, pr := range prs {
-			fmt.Printf("#%d [%s] %s\n", pr.Number, pr.State, pr.Title)
+			fmt.Printf("%s #%d [%s] %s\n", ui.Sage("•"), pr.Number, pr.State, pr.Title)
 		}
 		return nil
 	},
@@ -45,5 +32,5 @@ var prListCmd = &cobra.Command{
 
 func init() {
 	prCmd.AddCommand(prListCmd)
-	prListCmd.Flags().StringVar(&listState, "state", "open", "Filter by state: open, closed, or all")
+	prListCmd.Flags().StringVar(&listState, "state", "open", "PRs by state (open, closed, all)")
 }
