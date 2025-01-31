@@ -1,4 +1,4 @@
-# Sage 🪴
+![Sage Banner](docs/sage.jpg)
 
 Hey there! Welcome to Sage - your friendly neighborhood Git companion. Think of it as a smart wrapper around Git that helps you streamline your workflow.
 
