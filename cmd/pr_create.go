@@ -28,12 +28,13 @@ var (
 // prCreateCmd is "sage pr create"
 var prCreateCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Create a new PR on GitHub (with optional TUI)",
+	Short: "Create a new PR on GitHub (interactive if flags not provided)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		g := git.NewShellGit()
 		ghc := gh.NewClient()
 
-		if useTUI {
+		// Show interactive form if required fields are missing
+		if prTitle == "" || prBody == "" {
 			form, err := ui.AskPRForm(ui.PRForm{
 				Title:       prTitle,
 				Body:        prBody,
@@ -84,5 +85,4 @@ func init() {
 	prCreateCmd.Flags().StringSliceVar(&prReviewers, "reviewer", nil, "Add one or more reviewers")
 	prCreateCmd.Flags().StringSliceVar(&prLabels, "label", nil, "Add one or more labels")
 	prCreateCmd.Flags().BoolVar(&useTemplate, "template", true, "Use GitHub PR template if available")
-	prCreateCmd.Flags().BoolVar(&useTUI, "interactive", false, "Use TUI to gather PR details")
 }
