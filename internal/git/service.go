@@ -2,11 +2,12 @@ package git
 
 type Service interface {
 	IsRepo() (bool, error)
-	CurrentBranch() (string, error)
 	IsClean() (bool, error)
 	StageAll() error
 	Commit(msg string, allowEmpty bool) error
+	CurrentBranch() (string, error)
 	Push(branch string, force bool) error
+	GetDiff() (string, error)
 	DefaultBranch() (string, error)
 	MergedBranches(base string) ([]string, error)
 	DeleteBranch(name string) error

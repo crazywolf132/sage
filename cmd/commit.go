@@ -14,6 +14,8 @@ var (
 	useConventional bool
 	allowEmpty      bool
 	pushAfterCommit bool
+	useAI           bool
+	autoAcceptAI    bool
 )
 
 var commitCmd = &cobra.Command{
@@ -30,6 +32,8 @@ var commitCmd = &cobra.Command{
 			UseConventional: useConventional,
 			AllowEmpty:      allowEmpty,
 			PushAfterCommit: pushAfterCommit,
+			UseAI:           useAI,
+			AutoAcceptAI:    autoAcceptAI,
 		})
 		if err != nil {
 			return err
@@ -49,4 +53,6 @@ func init() {
 	commitCmd.Flags().BoolVarP(&useConventional, "conventional", "c", false, "Use conventional commit style")
 	commitCmd.Flags().BoolVar(&allowEmpty, "empty", false, "Allow empty commit")
 	commitCmd.Flags().BoolVarP(&pushAfterCommit, "push", "p", false, "Push after committing")
+	commitCmd.Flags().BoolVarP(&useAI, "ai", "a", false, "Use AI to generate commit message")
+	commitCmd.Flags().BoolVarP(&autoAcceptAI, "yes", "y", false, "Automatically accept AI generated commit message")
 }

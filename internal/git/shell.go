@@ -196,3 +196,15 @@ func (s *shellGit) Log(branch string, limit int, stats, all bool) (string, error
 	out, err := s.run(args...)
 	return out, err
 }
+
+func (s *shellGit) GetDiff() (string, error) {
+	output, err := s.run("diff", "--staged")
+	if err != nil {
+		// If there's an error, try getting unstaged changes
+		output, err = s.run("diff")
+		if err != nil {
+			return "", err
+		}
+	}
+	return output, nil
+}
