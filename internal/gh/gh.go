@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Client is the interface that Sage uses for GitHub operations.
+// Client is the interface for GitHub operations
 type Client interface {
 	CreatePR(title, body, head, base string, draft bool) (*PullRequest, error)
 	ListPRs(state string) ([]PullRequest, error)
@@ -15,10 +15,11 @@ type Client interface {
 	ClosePR(num int) error
 	GetPRDetails(num int) (*PullRequest, error)
 	CheckoutPR(num int) (string, error)
-	ListPRUnresolvedThreads(num int) ([]UnresolvedThread, error)
+	ListPRUnresolvedThreads(prNum int) ([]UnresolvedThread, error)
 	GetPRTemplate() (string, error)
-	AddLabels(num int, labels []string) error
-	RequestReviewers(num int, reviewers []string) error
+	AddLabels(prNumber int, labels []string) error
+	RequestReviewers(prNumber int, reviewers []string) error
+	GetPRForBranch(branchName string) (*PullRequest, error)
 }
 
 // pullRequestAPI is a minimal data holder for GH API calls

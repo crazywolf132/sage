@@ -269,3 +269,22 @@ func runCmd(prog string, args ...string) (string, error) {
 	b, err := cmd.CombinedOutput()
 	return string(b), err
 }
+
+// GetPRForBranch returns the pull request for the given branch name.
+// Returns nil if no PR exists for the branch.
+func (p *pullRequestAPI) GetPRForBranch(branchName string) (*PullRequest, error) {
+	// List open PRs for this branch
+	u := fmt.Sprintf("%s/repos/%s/%s/pulls?state=open&head=%s:%s", baseURL, p.owner, p.repo, p.owner, branchName)
+	data, err := p.do("GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+	var prs []PullRequest
+	if e := json.Unmarshal(data, &prs); e != nil {
+		return nil, e
+	}
+	if len(prs) == 0 {
+		return nil, nil
+	}
+	return &prs[0], nil
+}
