@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Client is the interface for GitHub operations
@@ -33,10 +34,10 @@ type pullRequestAPI struct {
 // PullRequest is the domain object representing a PR
 type PullRequest struct {
 	Number  int    `json:"number"`
-	HTMLURL string `json:"html_url"`
 	Title   string `json:"title"`
-	State   string `json:"state"`
 	Body    string `json:"body"`
+	State   string `json:"state"`
+	HTMLURL string `json:"html_url"`
 	Draft   bool   `json:"draft"`
 	Merged  bool   `json:"merged"`
 	Head    struct {
@@ -45,6 +46,31 @@ type PullRequest struct {
 	Base struct {
 		Ref string `json:"ref"`
 	} `json:"base"`
+	Reviews  []Review        `json:"reviews"`
+	Checks   []Check         `json:"checks"`
+	Timeline []TimelineEvent `json:"timeline"`
+}
+
+type Review struct {
+	State string `json:"state"`
+	User  struct {
+		Login string `json:"login"`
+	} `json:"user"`
+}
+
+type Check struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
+type TimelineEvent struct {
+	Event     string    `json:"event"`
+	CreatedAt time.Time `json:"created_at"`
+	Message   string    `json:"message"`
+	SHA       string    `json:"sha"`
+	Actor     struct {
+		Login string `json:"login"`
+	} `json:"actor"`
 }
 
 // UnresolvedThread is a minimal structure for unresolved PR comment threads

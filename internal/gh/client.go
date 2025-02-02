@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const baseURL = "https://api.github.com"
@@ -103,8 +104,9 @@ func (p *pullRequestAPI) ClosePR(num int) error {
 	return err
 }
 
-// GetPRDetails does GET /repos/:owner/:repo/pulls/:pull_number
+// GetPRDetails does GET /repos/:owner/:repo/pulls/:pull_number and fetches additional data
 func (p *pullRequestAPI) GetPRDetails(num int) (*PullRequest, error) {
+	// Get basic PR info
 	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d", baseURL, p.owner, p.repo, num)
 	data, err := p.do("GET", u, nil)
 	if err != nil {
@@ -114,7 +116,115 @@ func (p *pullRequestAPI) GetPRDetails(num int) (*PullRequest, error) {
 	if e := json.Unmarshal(data, &pr); e != nil {
 		return nil, e
 	}
+
+	// Get reviews
+	reviews, err := p.getPRReviews(num)
+	if err != nil {
+		// Don't fail if we can't get reviews
+		fmt.Printf("Warning: failed to get reviews: %v\n", err)
+	}
+	pr.Reviews = reviews
+
+	// Get checks
+	checks, err := p.getPRChecks(num)
+	if err != nil {
+		// Don't fail if we can't get checks
+		fmt.Printf("Warning: failed to get checks: %v\n", err)
+	}
+	pr.Checks = checks
+
+	// Get timeline
+	timeline, err := p.getPRTimeline(num)
+	if err != nil {
+		// Don't fail if we can't get timeline
+		fmt.Printf("Warning: failed to get timeline: %v\n", err)
+	}
+	pr.Timeline = timeline
+
 	return &pr, nil
+}
+
+func (p *pullRequestAPI) getPRReviews(num int) ([]Review, error) {
+	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/reviews", baseURL, p.owner, p.repo, num)
+	data, err := p.do("GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+	var reviews []Review
+	if e := json.Unmarshal(data, &reviews); e != nil {
+		return nil, e
+	}
+	return reviews, nil
+}
+
+func (p *pullRequestAPI) getPRChecks(num int) ([]Check, error) {
+	// First get the ref (SHA) for the PR head
+	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d", baseURL, p.owner, p.repo, num)
+	data, err := p.do("GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+	var pr struct {
+		Head struct {
+			SHA string `json:"sha"`
+		} `json:"head"`
+	}
+	if e := json.Unmarshal(data, &pr); e != nil {
+		return nil, e
+	}
+
+	// Then get check runs for that SHA
+	u = fmt.Sprintf("%s/repos/%s/%s/commits/%s/check-runs", baseURL, p.owner, p.repo, pr.Head.SHA)
+	data, err = p.do("GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		CheckRuns []Check `json:"check_runs"`
+	}
+	if e := json.Unmarshal(data, &resp); e != nil {
+		return nil, e
+	}
+	return resp.CheckRuns, nil
+}
+
+func (p *pullRequestAPI) getPRTimeline(num int) ([]TimelineEvent, error) {
+	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/commits", baseURL, p.owner, p.repo, num)
+	data, err := p.do("GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+	var commits []struct {
+		SHA    string `json:"sha"`
+		Commit struct {
+			Message   string `json:"message"`
+			Committer struct {
+				Date time.Time `json:"date"`
+			} `json:"committer"`
+		} `json:"commit"`
+		Author struct {
+			Login string `json:"login"`
+		} `json:"author"`
+	}
+	if e := json.Unmarshal(data, &commits); e != nil {
+		return nil, e
+	}
+
+	var timeline []TimelineEvent
+	for _, c := range commits {
+		timeline = append(timeline, TimelineEvent{
+			Event:     "committed",
+			CreatedAt: c.Commit.Committer.Date,
+			Message:   c.Commit.Message,
+			SHA:       c.SHA,
+			Actor: struct {
+				Login string `json:"login"`
+			}{
+				Login: c.Author.Login,
+			},
+		})
+	}
+	return timeline, nil
 }
 
 // CheckoutPR fetches the branch and switches locally
