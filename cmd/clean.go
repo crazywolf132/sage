@@ -2,85 +2,57 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/crazywolf132/sage/internal/gitutils"
+	"github.com/crazywolf132/sage/internal/app"
+	"github.com/crazywolf132/sage/internal/git"
 	"github.com/crazywolf132/sage/internal/ui"
 	"github.com/spf13/cobra"
 )
 
 var cleanCmd = &cobra.Command{
-    Use:   "clean",
-    Short: "Clean up merged branches",
-    RunE: func(cmd *cobra.Command, args []string) error {
-        // Get default branch
-        defaultBranch, err := gitutils.GetDefaultBranch()
-        if err != nil {
-            return fmt.Errorf("failed to determine default branch: %w", err)
-        }
+	Use:   "clean",
+	Short: "Clean up merged branches",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		g := git.NewShellGit()
+		info, err := app.FindCleanableBranches(g)
+		if err != nil {
+			return err
+		}
+		if len(info.Branches) == 0 {
+			fmt.Println(ui.Green("No merged branches to clean."))
+			return nil
+		}
 
-        // Get current branch
-        currentBranch, err := gitutils.GetCurrentBranch()
-        if err != nil {
-            return fmt.Errorf("failed to get current branch: %w", err)
-        }
+		fmt.Println(ui.Bold("Merged branches that can be deleted:"))
+		for _, br := range info.Branches {
+			fmt.Printf("  %s\n", br)
+		}
 
-        // Get merged branches
-        mergedBranches, err := gitutils.GetMergedBranches(defaultBranch)
-        if err != nil {
-            return fmt.Errorf("failed to get merged branches: %w", err)
-        }
+		var confirm bool
+		prompt := &survey.Confirm{
+			Message: "Delete these branches?",
+		}
+		if err := survey.AskOne(prompt, &confirm); err != nil {
+			return err
+		}
+		if !confirm {
+			fmt.Println(ui.Gray("Aborted."))
+			return nil
+		}
 
-        // Filter branches to delete
-        var toDelete []string
-        for _, branch := range mergedBranches {
-            branch = strings.TrimSpace(branch)
-            if branch == "" || branch == defaultBranch || branch == currentBranch {
-                continue
-            }
-            toDelete = append(toDelete, branch)
-        }
-
-        if len(toDelete) == 0 {
-            fmt.Println("✨ No merged branches to clean up")
-            return nil
-        }
-
-        // Show branches to delete
-        fmt.Println(ui.ColoredText("Branches to clean:", ui.Sage))
-        for _, branch := range toDelete {
-            fmt.Printf("  %s\n", branch)
-        }
-
-        // Confirm deletion
-        confirm := false
-        prompt := &survey.Confirm{
-            Message: "Delete these branches?",
-            Default: false,
-        }
-        if err := survey.AskOne(prompt, &confirm); err != nil {
-            return err
-        }
-
-        if !confirm {
-            fmt.Println("Cleanup cancelled")
-            return nil
-        }
-
-        // Delete branches
-        for _, branch := range toDelete {
-            if err := gitutils.RunGitCommand("branch", "-d", branch); err != nil {
-                fmt.Printf("⚠️ Failed to delete %s: %v\n", branch, err)
-            } else {
-                fmt.Printf("🗑️ Deleted %s\n", branch)
-            }
-        }
-
-        return nil
-    },
+		results := app.DeleteLocalBranches(g, info.Branches)
+		for _, r := range results {
+			if r.Err != nil {
+				fmt.Printf("%s Could not delete %s: %v\n", ui.Red("✗"), r.Branch, r.Err)
+			} else {
+				fmt.Printf("%s Deleted %s\n", ui.Green("✓"), r.Branch)
+			}
+		}
+		return nil
+	},
 }
 
 func init() {
-    RootCmd.AddCommand(cleanCmd)
+	rootCmd.AddCommand(cleanCmd)
 }

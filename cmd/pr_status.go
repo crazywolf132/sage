@@ -1,19 +1,20 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/crazywolf132/sage/internal/githubutils"
+	"github.com/crazywolf132/sage/internal/app"
+	"github.com/crazywolf132/sage/internal/gh"
+	"github.com/crazywolf132/sage/internal/git"
 	"github.com/crazywolf132/sage/internal/ui"
 	"github.com/spf13/cobra"
 )
 
 var prStatusCmd = &cobra.Command{
-	Use:   "status [pr-number]",
+	Use:   "status [pr-num]",
 	Short: "Show detailed status of a pull request",
 	Long: `Display comprehensive information about a pull request including:
 - Title and description
@@ -24,59 +25,63 @@ var prStatusCmd = &cobra.Command{
 - Timeline of events`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// 1. Get token
-		token, err := githubutils.GetGitHubToken()
-		if err != nil {
-			return err
-		}
-		if token == "" {
-			return errors.New("no GitHub token found; install GH CLI or set SAGE_GITHUB_TOKEN / GITHUB_TOKEN")
-		}
+		ghc := gh.NewClient()
+		g := git.NewShellGit()
 
-		// 2. Get owner/repo
-		owner, repo, err := githubutils.FindRepoOwnerAndName()
-		if err != nil {
-			return err
-		}
+		var num int
+		var err error
 
-		var prNumber int
 		if len(args) == 1 {
-			// If PR number provided, use it
-			prNumber, err = strconv.Atoi(args[0])
+			// PR number provided
+			num, err = strconv.Atoi(args[0])
 			if err != nil {
-				return fmt.Errorf("invalid PR number: %s", args[0])
+				return err
 			}
 		} else {
-			// If no PR number, try to get current branch's PR
-			currentPR, err := githubutils.GetCurrentBranchPR(token, owner, repo)
+			// Use current branch's PR
+			branch, err := g.CurrentBranch()
 			if err != nil {
-				return fmt.Errorf("failed to get PR for current branch: %w", err)
+				return err
 			}
-			if currentPR == nil {
-				return errors.New("no pull request found for current branch")
+
+			// List PRs for this branch
+			prs, err := ghc.ListPRs("open")
+			if err != nil {
+				return err
 			}
-			prNumber = currentPR.Number
+
+			// Find PR for current branch
+			var found bool
+			for _, pr := range prs {
+				if pr.Head.Ref == branch {
+					num = pr.Number
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				return fmt.Errorf("no PR number provided and no PR found for current branch %q", branch)
+			}
 		}
 
-		// 3. Get PR details
-		pr, err := githubutils.GetPullRequestDetails(token, owner, repo, prNumber)
+		details, err := app.GetPRDetails(ghc, num)
 		if err != nil {
 			return err
 		}
 
-		// 4. Print PR information in a beautiful format
-		printPRStatus(pr)
+		printPRStatus(details)
 		return nil
 	},
 }
 
-func printPRStatus(pr *githubutils.PullRequestDetails) {
+func printPRStatus(pr *gh.PullRequest) {
 	// Title section
-	fmt.Printf("\n%s #%d: %s\n", ui.ColoredText("Pull Request", ui.Sage), pr.Number, ui.ColoredText(pr.Title, ui.White))
-	fmt.Printf("%s\n\n", ui.ColoredText(pr.HTMLURL, ui.Blue))
+	fmt.Printf("\n%s #%d: %s\n", ui.Sage("Pull Request"), pr.Number, ui.White(pr.Title))
+	fmt.Printf("%s\n\n", ui.Blue(pr.HTMLURL))
 
 	// Status indicators
-	statusColor := ui.Yellow
+	var statusColor func(string) string = ui.Yellow
 	if pr.State == "closed" {
 		if pr.Merged {
 			statusColor = ui.Blue
@@ -97,16 +102,16 @@ func printPRStatus(pr *githubutils.PullRequestDetails) {
 		status = "merged"
 	}
 
-	fmt.Printf("Status: %s\n", ui.ColoredText(strings.ToUpper(status), statusColor))
+	fmt.Printf("Status: %s\n", statusColor(strings.ToUpper(status)))
 
 	// Branch information
-	fmt.Printf("Branch: %s → %s\n", ui.ColoredText(pr.Head.Ref, ui.Yellow), ui.ColoredText(pr.Base.Ref, ui.Yellow))
+	fmt.Printf("Branch: %s → %s\n", ui.Yellow(pr.Head.Ref), ui.Yellow(pr.Base.Ref))
 
 	// Review status
 	if len(pr.Reviews) > 0 {
-		fmt.Printf("\n%s\n", ui.ColoredText("Reviews:", ui.Sage))
+		fmt.Printf("\n%s\n", ui.Sage("Reviews:"))
 		for _, review := range pr.Reviews {
-			reviewColor := ui.White
+			var reviewColor func(string) string = ui.White
 			switch review.State {
 			case "APPROVED":
 				reviewColor = ui.Sage
@@ -115,15 +120,15 @@ func printPRStatus(pr *githubutils.PullRequestDetails) {
 			case "COMMENTED":
 				reviewColor = ui.Blue
 			}
-			fmt.Printf("  %s by @%s\n", ui.ColoredText(review.State, reviewColor), review.User.Login)
+			fmt.Printf("  %s by @%s\n", reviewColor(review.State), review.User.Login)
 		}
 	}
 
 	// CI Status
 	if len(pr.Checks) > 0 {
-		fmt.Printf("\n%s\n", ui.ColoredText("Checks:", ui.Sage))
+		fmt.Printf("\n%s\n", ui.Sage("Checks:"))
 		for _, check := range pr.Checks {
-			checkColor := ui.White
+			var checkColor func(string) string = ui.White
 			switch check.Status {
 			case "success":
 				checkColor = ui.Sage
@@ -132,28 +137,28 @@ func printPRStatus(pr *githubutils.PullRequestDetails) {
 			case "pending":
 				checkColor = ui.Yellow
 			}
-			fmt.Printf("  %s: %s\n", check.Name, ui.ColoredText(check.Status, checkColor))
+			fmt.Printf("  %s: %s\n", check.Name, checkColor(check.Status))
 		}
 	}
 
 	// Description
 	if pr.Body != "" {
-		fmt.Printf("\n%s\n", ui.ColoredText("Description:", ui.Sage))
+		fmt.Printf("\n%s\n", ui.Sage("Description:"))
 		fmt.Printf("%s\n", pr.Body)
 	}
 
 	// Timeline (recent commits)
 	if len(pr.Timeline) > 0 {
-		fmt.Printf("\n%s\n", ui.ColoredText("Recent Commits:", ui.Sage))
+		fmt.Printf("\n%s\n", ui.Sage("Recent Commits:"))
 		for _, event := range pr.Timeline {
 			if event.Event == "committed" {
 				timestamp := event.CreatedAt.Format(time.RFC822)
 				// Get first line of commit message
 				message := strings.Split(event.Message, "\n")[0]
 				fmt.Printf("  %s: %s (%s) by @%s\n",
-					ui.ColoredText(timestamp, ui.White),
+					ui.White(timestamp),
 					message,
-					ui.ColoredText(event.SHA, ui.Yellow),
+					ui.Yellow(event.SHA[:7]),
 					event.Actor.Login)
 			}
 		}

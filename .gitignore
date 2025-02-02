@@ -39,3 +39,4 @@ dist/
 # Test coverage
 coverage.txt
 coverage.html 
+.sage/config.toml

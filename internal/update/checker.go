@@ -13,118 +13,89 @@ import (
 	"github.com/crazywolf132/sage/internal/ui"
 )
 
-const (
-	repoAPI = "https://api.github.com/repos/crazywolf132/sage/commits/main"
-)
+const lastCommitURL = "https://api.github.com/repos/sage/commits/main"
 
-type CommitInfo struct {
+type commitResp struct {
 	SHA string `json:"sha"`
 }
 
-// getUpdateCheckPath returns the path to store the update check file
-// On Unix systems, it's stored in /var/tmp
-// On Windows, it's stored in %LOCALAPPDATA%
-func getUpdateCheckPath() (string, error) {
-	if runtime.GOOS == "windows" {
-		appData := os.Getenv("LOCALAPPDATA")
-		if appData == "" {
-			return "", fmt.Errorf("LOCALAPPDATA environment variable not set")
-		}
-		return filepath.Join(appData, "sage_update_check"), nil
-	}
-
-	// For Unix-like systems, use /var/tmp for system-wide access
-	return "/var/tmp/sage_update_check", nil
-}
-
-// CheckForUpdates checks if there are any updates available for sage
-// It only checks once every 24 hours to avoid unnecessary API calls
 func CheckForUpdates() error {
-	checkFile, err := getUpdateCheckPath()
+	checkFile, err := updateCheckPath()
 	if err != nil {
-		return fmt.Errorf("failed to get update check path: %w", err)
-	}
-
-	shouldCheck, lastKnownSHA := shouldCheckForUpdates(checkFile)
-	if !shouldCheck {
 		return nil
 	}
-
-	// Get the latest commit SHA from GitHub
-	latestSHA, err := getLatestCommitSHA()
+	should, oldSHA := shouldCheck(checkFile)
+	if !should {
+		return nil
+	}
+	newSHA, err := getLatestSHA()
 	if err != nil {
-		return fmt.Errorf("failed to get latest commit: %w", err)
+		return nil // ignore
 	}
-
-	// Update the check file with current time and SHA
-	if err := writeCheckFile(checkFile, latestSHA); err != nil {
-		return fmt.Errorf("failed to update check file: %w", err)
+	_ = writeCheck(checkFile, newSHA)
+	if oldSHA != "" && newSHA != oldSHA {
+		ui.Warnf("A new version of Sage may be available!\n")
 	}
-
-	// If we have a different SHA and it's not the first run (empty lastKnownSHA)
-	if lastKnownSHA != "" && latestSHA != lastKnownSHA {
-		ui.DrawBox("A new version of sage is available!\ngo install github.com/crazywolf132/sage@latest")
-	}
-
 	return nil
 }
 
-func shouldCheckForUpdates(checkFile string) (bool, string) {
-	data, err := os.ReadFile(checkFile)
-	if err != nil {
-		return true, "" // First run or error reading file
+func updateCheckPath() (string, error) {
+	if runtime.GOOS == "windows" {
+		appdata := os.Getenv("LOCALAPPDATA")
+		if appdata == "" {
+			return "", fmt.Errorf("no LOCALAPPDATA")
+		}
+		return filepath.Join(appdata, "sage_update.json"), nil
 	}
-
-	var info struct {
-		LastCheck time.Time `json:"last_check"`
-		SHA       string    `json:"sha"`
-	}
-
-	if err := json.Unmarshal(data, &info); err != nil {
-		return true, "" // Invalid file format
-	}
-
-	// Check if 24 hours have passed
-	if time.Since(info.LastCheck) < 24*time.Hour {
-		return false, info.SHA
-	}
-
-	return true, info.SHA
+	return "/tmp/sage_update.json", nil
 }
 
-func getLatestCommitSHA() (string, error) {
-	resp, err := http.Get(repoAPI)
+func shouldCheck(path string) (bool, string) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return true, ""
+	}
+	var st struct {
+		LastCheck time.Time
+		SHA       string
+	}
+	if err := json.Unmarshal(b, &st); err != nil {
+		return true, ""
+	}
+	if time.Since(st.LastCheck) < 24*time.Hour {
+		return false, st.SHA
+	}
+	return true, st.SHA
+}
+
+func getLatestSHA() (string, error) {
+	resp, err := http.Get(lastCommitURL)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("status %d", resp.StatusCode)
+	}
+	d, _ := io.ReadAll(resp.Body)
+	var c commitResp
+	if err := json.Unmarshal(d, &c); err != nil {
 		return "", err
 	}
-
-	var commit CommitInfo
-	if err := json.Unmarshal(body, &commit); err != nil {
-		return "", err
-	}
-
-	return commit.SHA, nil
+	return c.SHA, nil
 }
 
-func writeCheckFile(checkFile, sha string) error {
-	info := struct {
-		LastCheck time.Time `json:"last_check"`
-		SHA       string    `json:"sha"`
+func writeCheck(path, sha string) error {
+	st := struct {
+		LastCheck time.Time
+		SHA       string
 	}{
 		LastCheck: time.Now(),
 		SHA:       sha,
 	}
-
-	data, err := json.Marshal(info)
+	b, err := json.Marshal(st)
 	if err != nil {
 		return err
 	}
-
-	return os.WriteFile(checkFile, data, 0644)
+	return os.WriteFile(path, b, 0644)
 }

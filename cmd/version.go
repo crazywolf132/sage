@@ -6,17 +6,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var version = "0.1.0" // Replace or override at build time if desired
+var version = "2.0.0"
 
-// versionCmd represents "sage version"
 var versionCmd = &cobra.Command{
 	Use:   "version",
-	Short: "Print the version of Sage",
+	Short: "Show Sage version",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("Sage version %s\n", version)
 	},
 }
 
 func init() {
-	RootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(versionCmd)
 }
