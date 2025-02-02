@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/crazywolf132/sage/internal/ai"
 	"github.com/crazywolf132/sage/internal/git"
-	"github.com/crazywolf132/sage/internal/ollama"
 	"github.com/crazywolf132/sage/internal/ui"
 )
 
@@ -46,7 +46,7 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 		if diff == "" {
 			return nil, fmt.Errorf("no changes to commit; use --empty to allow empty")
 		}
-		client := ollama.NewClient("")
+		client := ai.NewClient("")
 		for {
 			msg, err := client.GenerateCommitMessage(diff)
 			if err != nil {

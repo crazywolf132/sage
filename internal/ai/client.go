@@ -1,4 +1,4 @@
-package ollama
+package ai
 
 import (
 	"bytes"
