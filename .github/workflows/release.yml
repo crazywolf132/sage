@@ -33,29 +33,52 @@ jobs:
       - name: Auto-generate tag
         id: tag
         run: |
-          # Get the latest tag
+          # Get the latest tag, if any
           git fetch --prune --tags
-          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          echo "Latest tag: $latest_tag"
+          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           
-          # Get all commits since last tag
-          commits=$(git log --pretty=format:"%s" $latest_tag..HEAD)
+          if [ -z "$latest_tag" ]; then
+            echo "No tags found, starting from v0.0.0"
+            # For first release, count all commits
+            commits=$(git log --pretty=format:"%s")
+            major=0
+            minor=0
+            patch=0
+          else
+            echo "Latest tag: $latest_tag"
+            # Get commits since last tag
+            commits=$(git log --pretty=format:"%s" ${latest_tag}..HEAD)
+            # Extract current version numbers
+            version=${latest_tag#v}
+            IFS='.' read -r major minor patch <<< "$version"
+          fi
           
-          # Count meaningful changes (excluding chore, ci, test, docs, etc)
-          major_bump=$(echo "$commits" | grep -c "^[a-zA-Z]*!:")
-          minor_bump=$(echo "$commits" | grep -c "^feat")
-          patch_bump=$(echo "$commits" | grep -c "^fix")
+          # Exit early if no commits to analyze
+          if [ -z "$commits" ]; then
+            echo "No commits to analyze"
+            echo "SHOULD_RELEASE=false" >> $GITHUB_ENV
+            exit 0
+          fi
           
-          # Ignore these types of commits for version bumping
-          ignored_commits=$(echo "$commits" | grep -cE "^(chore|ci|test|docs|style|refactor|perf):")
+          # Count meaningful changes with more precise patterns
+          major_bump=$(echo "$commits" | grep -cE "^(feat|fix|refactor|perf)!:" || true)
+          minor_bump=$(echo "$commits" | grep -cE "^feat(\([^)]+\))?:" || true)
+          patch_bump=$(echo "$commits" | grep -cE "^fix(\([^)]+\))?:" || true)
+          
+          # Calculate total meaningful changes
+          meaningful_changes=$((major_bump + minor_bump + patch_bump))
+          
+          # Count total commits for logging
           total_commits=$(echo "$commits" | wc -l)
-          meaningful_changes=$((total_commits - ignored_commits))
           
-          # Extract current version numbers
-          version=${latest_tag#v}
-          IFS='.' read -r major minor patch <<< "$version"
+          echo "Commits analysis:"
+          echo "Major changes (breaking): $major_bump"
+          echo "Minor changes (features): $minor_bump"
+          echo "Patch changes (fixes): $patch_bump"
+          echo "Total meaningful changes: $meaningful_changes"
+          echo "Total commits analyzed: $total_commits"
           
-          # Only bump version if there are meaningful changes
+          # Determine if we should create a release
           if [ $meaningful_changes -gt 0 ]; then
             if [ $major_bump -gt 0 ]; then
               major=$((major + 1))
@@ -66,6 +89,11 @@ jobs:
               patch=0
             elif [ $patch_bump -gt 0 ]; then
               patch=$((patch + 1))
+            else
+              # If this is the first release, start with 0.1.0
+              if [ -z "$latest_tag" ]; then
+                minor=1
+              fi
             fi
             
             new_tag="v$major.$minor.$patch"
@@ -73,7 +101,7 @@ jobs:
             echo "Generated new tag: $new_tag"
             echo "SHOULD_RELEASE=true" >> $GITHUB_ENV
           else
-            echo "No meaningful changes detected, skipping release"
+            echo "No meaningful changes detected (no feat/fix/breaking changes)"
             echo "SHOULD_RELEASE=false" >> $GITHUB_ENV
           fi
 
