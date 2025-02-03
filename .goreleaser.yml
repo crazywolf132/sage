@@ -1,13 +1,9 @@
+version: 2
 project_name: sage
 
-github:
-  owner: crazywolf132
-  name: sage
-  draft: false
-  prerelease: false
-
 builds:
-  - binary: sage
+  - id: sage
+    binary: sage
     goos:
       - linux
       - darwin
@@ -15,18 +11,46 @@ builds:
     goarch:
       - amd64
       - arm64
-    ldflags: "-s -w -X github.com/crazywolf132/sage/cmd.Version={{ .Version }}"
+    env:
+      - CGO_ENABLED=0
+    ldflags: 
+      - "-s -w -X github.com/crazywolf132/sage/cmd.Version={{ .Version }}"
+    mod_timestamp: '{{ .CommitTimestamp }}'
 
 archives:
-  - format: tar.gz
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - id: sage
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    format: tar.gz
+    files:
+      - none*
+    format_overrides:
+      - goos: windows
+        format: zip
+    wrap_in_directory: false
 
 changelog:
   sort: asc
   use: conventionalcommits
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
 
 release:
-  disable: false
+  github:
+    owner: crazywolf132
+    name: sage
+  draft: false
+  prerelease: auto
+  mode: replace
 
 before:
   hooks:
