@@ -18,8 +18,6 @@ release:
     Welcome to this new release!
   footer: |
     **Full Changelog**: https://github.com/crazywolf132/sage/compare/{{ .PreviousTag }}...{{ .Tag }}
-  extra_files:
-    - glob: 'CHANGELOG.md'
   name_template: "{{.Version}}"
 
 builds:
