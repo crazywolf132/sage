@@ -128,7 +128,7 @@ jobs:
         with:
           distribution: goreleaser
           version: v2.6.1
-          args: release --clean --rm-dist
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ env.NEW_TAG }} 
