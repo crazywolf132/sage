@@ -24,4 +24,7 @@ type Service interface {
 	ResetSoft(ref string) error
 	ListBranches() ([]string, error)
 	Log(branch string, limit int, stats, all bool) (string, error)
+	SquashCommits(startCommit string) error
+	IsHeadBranch(branch string) (bool, error)
+	GetFirstCommit() (string, error)
 }

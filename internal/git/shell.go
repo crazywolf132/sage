@@ -208,3 +208,23 @@ func (s *shellGit) GetDiff() (string, error) {
 	}
 	return output, nil
 }
+
+func (s *shellGit) SquashCommits(startCommit string) error {
+	return s.runInteractive("rebase", "-i", startCommit)
+}
+
+func (s *shellGit) IsHeadBranch(branch string) (bool, error) {
+	defaultBranch, err := s.DefaultBranch()
+	if err != nil {
+		return false, err
+	}
+	return branch == defaultBranch, nil
+}
+
+func (s *shellGit) GetFirstCommit() (string, error) {
+	out, err := s.run("rev-list", "--max-parents=0", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("failed to get first commit: %w", err)
+	}
+	return strings.TrimSpace(out), nil
+}
