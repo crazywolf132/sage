@@ -6,7 +6,7 @@ import (
 	"github.com/crazywolf132/sage/internal/git"
 )
 
-func Undo(g git.Service) error {
+func Undo(g git.Service, count int) error {
 	repo, err := g.IsRepo()
 	if err != nil || !repo {
 		return fmt.Errorf("not a git repo")
@@ -26,6 +26,12 @@ func Undo(g git.Service) error {
 	if rebase {
 		return g.RebaseAbort()
 	}
-	// do a soft reset HEAD~1, or fail
-	return g.ResetSoft("HEAD~1")
+
+	// If count is not specified or is 1, do a single undo
+	if count <= 1 {
+		return g.ResetSoft("HEAD~1")
+	}
+
+	// For multiple commits, use HEAD~N where N is the count
+	return g.ResetSoft(fmt.Sprintf("HEAD~%d", count))
 }
