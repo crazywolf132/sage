@@ -113,10 +113,9 @@ jobs:
           git tag -a ${{ env.NEW_TAG }} -m "Release ${{ env.NEW_TAG }}"
           git push origin ${{ env.NEW_TAG }}
 
-      - name: Fetch new tag
+      - name: Verify tag
         if: env.SHOULD_RELEASE == 'true'
         run: |
-          git fetch --force --tags
           # Verify the tag exists
           if ! git show-ref --tags ${{ env.NEW_TAG }} --quiet; then
             echo "Tag ${{ env.NEW_TAG }} not found"
@@ -129,6 +128,7 @@ jobs:
         with:
           distribution: goreleaser
           version: v2.6.1
-          args: release --clean
+          args: release --clean --skip-validate --rm-dist
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ env.NEW_TAG }} 
