@@ -113,6 +113,16 @@ jobs:
           git tag -a ${{ env.NEW_TAG }} -m "Release ${{ env.NEW_TAG }}"
           git push origin ${{ env.NEW_TAG }}
 
+      - name: Fetch new tag
+        if: env.SHOULD_RELEASE == 'true'
+        run: |
+          git fetch --force --tags
+          # Verify the tag exists
+          if ! git show-ref --tags ${{ env.NEW_TAG }} --quiet; then
+            echo "Tag ${{ env.NEW_TAG }} not found"
+            exit 1
+          fi
+
       - name: Create Release with GoReleaser
         if: env.SHOULD_RELEASE == 'true'
         uses: goreleaser/goreleaser-action@v6
