@@ -1,6 +1,27 @@
 version: 2
 project_name: sage
 
+git:
+  tag_sort: semver
+
+# Automatically determine the next version based on conventional commits
+release:
+  github:
+    owner: crazywolf132
+    name: sage
+  draft: false
+  prerelease: auto
+  mode: replace
+  header: |
+    ## Release {{ .Tag }} ({{ .Date }})
+    
+    Welcome to this new release!
+  footer: |
+    **Full Changelog**: https://github.com/crazywolf132/sage/compare/{{ .PreviousTag }}...{{ .Tag }}
+  extra_files:
+    - glob: 'CHANGELOG.md'
+  name_template: "{{.Version}}"
+
 builds:
   - id: sage
     binary: sage
@@ -35,22 +56,33 @@ archives:
 
 changelog:
   sort: asc
-  use: conventionalcommits
+  use: github
+  groups:
+    - title: 'Breaking Changes 🛠'
+      regexp: "^.*!:+.*$"
+      order: 0
+    - title: 'New Features 🎉'
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 1
+    - title: 'Bug Fixes 🐞'
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 2
+    - title: 'Maintenance 🔧'
+      regexp: "^.*chore[(\\w)]*:+.*$"
+      order: 3
+    - title: 'Documentation 📚'
+      regexp: "^.*docs[(\\w)]*:+.*$"
+      order: 4
+    - title: 'Other Changes'
+      order: 999
   filters:
     exclude:
-      - '^docs:'
       - '^test:'
       - '^ci:'
       - Merge pull request
       - Merge branch
-
-release:
-  github:
-    owner: crazywolf132
-    name: sage
-  draft: false
-  prerelease: auto
-  mode: replace
+      - '^chore\\(deps\\):'
+  skip: false
 
 before:
   hooks:
