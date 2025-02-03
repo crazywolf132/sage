@@ -2,13 +2,22 @@
 default:
     @just --list
 
-# Build the project
+version := "0.0.0-dev-" + `date "+%H.%M.%d.%m.%Y"`
+ldflags := "-X 'github.com/crazywolf132/sage/cmd.Version=" + version + "'"
+
+# Build the project (release build)
 build:
-    go build -o bin/sage
+    go build -o bin/sage .
+
+# Build the development version with embedded version info
+# The version format is: {major}.{minor}.{patch}-dev-{hour}.{minute}.{day}.{month}.{year}
+# Example: 0.0.0-dev-15.04.02.01.2006
+build-dev:
+    go build -ldflags='{{ldflags}}' -o bin/sage .
 
 # Run all tests
 test:
-    go test -v ./...
+    do go test ./...
 
 # Run tests with coverage
 test-coverage:

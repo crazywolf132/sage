@@ -1,0 +1,33 @@
+project_name: sage
+
+github:
+  owner: crazywolf132
+  name: sage
+  draft: false
+  prerelease: false
+
+builds:
+  - binary: sage
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags: "-s -w -X main.version={{ .Version }}"
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+changelog:
+  sort: asc
+  use: conventionalcommits
+
+release:
+  disable: false
+
+before:
+  hooks:
+    - go mod tidy 
