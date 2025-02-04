@@ -12,16 +12,14 @@ import (
 )
 
 var (
-	useTUI bool
-)
-
-var (
 	prTitle     string
 	prBody      string
 	prBase      string
 	prDraft     bool
 	prReviewers []string
 	prLabels    []string
+	useTUI      bool
+	prUseAI     bool
 )
 
 // prCreateCmd is "sage pr create"
@@ -31,6 +29,23 @@ var prCreateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		g := git.NewShellGit()
 		ghc := gh.NewClient()
+
+		// If AI flag is set, generate PR content first
+		if prUseAI {
+			aiForm, err := ui.GenerateAIPRContent(g, ghc)
+			if err != nil {
+				return fmt.Errorf("failed to generate AI content: %w", err)
+			}
+			prTitle = aiForm.Title
+			prBody = aiForm.Body
+			// Don't override other flags if they were explicitly set
+			if len(prLabels) == 0 {
+				prLabels = aiForm.Labels
+			}
+			if len(prReviewers) == 0 {
+				prReviewers = aiForm.Reviewers
+			}
+		}
 
 		// Show interactive form if required fields are missing
 		if prTitle == "" || prBody == "" {
@@ -81,4 +96,5 @@ func init() {
 	prCreateCmd.Flags().BoolVar(&prDraft, "draft", false, "Create as draft PR")
 	prCreateCmd.Flags().StringSliceVar(&prReviewers, "reviewer", nil, "Add one or more reviewers")
 	prCreateCmd.Flags().StringSliceVar(&prLabels, "label", nil, "Add one or more labels")
+	prCreateCmd.Flags().BoolVarP(&prUseAI, "ai", "a", false, "Use AI to generate PR content")
 }

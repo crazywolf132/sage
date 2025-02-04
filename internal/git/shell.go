@@ -184,17 +184,30 @@ func (s *shellGit) ListBranches() ([]string, error) {
 }
 
 func (s *shellGit) Log(branch string, limit int, stats, all bool) (string, error) {
-	args := []string{"log", branch, `--format=%H%x00%an%x00%at%x00%s`}
+	// Use a more descriptive format that includes the commit message body
+	args := []string{"log", branch, `--format=%s%n%b%n---`}
 	if limit > 0 {
 		args = append(args, "-n", strconv.Itoa(limit))
 	}
 	if stats {
 		args = append(args, "--numstat")
 	}
-	// 'all' is a trick, you might do something else
-	// For demonstration, we'll skip advanced logic.
 	out, err := s.run(args...)
-	return out, err
+	if err != nil {
+		return "", err
+	}
+
+	// Clean up the output
+	commits := strings.Split(out, "\n---\n")
+	var result []string
+	for _, commit := range commits {
+		commit = strings.TrimSpace(commit)
+		if commit != "" {
+			result = append(result, commit)
+		}
+	}
+
+	return strings.Join(result, "\n"), nil
 }
 
 func (s *shellGit) GetDiff() (string, error) {
