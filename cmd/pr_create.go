@@ -12,8 +12,7 @@ import (
 )
 
 var (
-	useTUI      bool
-	useTemplate bool
+	useTUI bool
 )
 
 var (
@@ -36,13 +35,12 @@ var prCreateCmd = &cobra.Command{
 		// Show interactive form if required fields are missing
 		if prTitle == "" || prBody == "" {
 			form, err := ui.AskPRForm(ui.PRForm{
-				Title:       prTitle,
-				Body:        prBody,
-				Base:        prBase,
-				Draft:       prDraft,
-				Labels:      prLabels,
-				Reviewers:   prReviewers,
-				UseTemplate: useTemplate,
+				Title:     prTitle,
+				Body:      prBody,
+				Base:      prBase,
+				Draft:     prDraft,
+				Labels:    prLabels,
+				Reviewers: prReviewers,
 			}, ghc)
 			if err != nil {
 				return err
@@ -57,13 +55,12 @@ var prCreateCmd = &cobra.Command{
 		}
 
 		opts := app.CreatePROpts{
-			Title:       prTitle,
-			Body:        prBody,
-			Base:        prBase,
-			Draft:       prDraft,
-			Labels:      prLabels,
-			Reviewers:   prReviewers,
-			UseTemplate: useTemplate,
+			Title:     prTitle,
+			Body:      prBody,
+			Base:      prBase,
+			Draft:     prDraft,
+			Labels:    prLabels,
+			Reviewers: prReviewers,
 		}
 		pr, err := app.CreatePullRequest(g, ghc, opts)
 		if err != nil {
@@ -84,5 +81,4 @@ func init() {
 	prCreateCmd.Flags().BoolVar(&prDraft, "draft", false, "Create as draft PR")
 	prCreateCmd.Flags().StringSliceVar(&prReviewers, "reviewer", nil, "Add one or more reviewers")
 	prCreateCmd.Flags().StringSliceVar(&prLabels, "label", nil, "Add one or more labels")
-	prCreateCmd.Flags().BoolVar(&useTemplate, "template", true, "Use GitHub PR template if available")
 }

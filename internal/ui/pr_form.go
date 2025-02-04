@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -9,24 +10,44 @@ import (
 
 // PRForm is the structure we use to gather from the user.
 type PRForm struct {
-	Title       string
-	Body        string
-	Base        string
-	Draft       bool
-	Labels      []string
-	Reviewers   []string
-	UseTemplate bool
+	Title     string
+	Body      string
+	Base      string
+	Draft     bool
+	Labels    []string
+	Reviewers []string
+}
+
+// truncateBody returns a truncated version of the body text suitable for preview
+func truncateBody(body string, maxLines int, maxLineLength int) string {
+	lines := strings.Split(body, "\n")
+	if len(lines) > maxLines {
+		lines = lines[:maxLines]
+		lines = append(lines, "...")
+	}
+
+	// Truncate each line if too long
+	for i, line := range lines {
+		if len(line) > maxLineLength {
+			lines[i] = line[:maxLineLength] + "..."
+		}
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 // AskPRForm uses Survey to gather the user's input
-// If UseTemplate is true and Body is empty, we might fetch from GH client for a template.
+// If Body is empty, we'll fetch and use the PR template if available.
 func AskPRForm(initial PRForm, ghc gh.Client) (PRForm, error) {
 	form := initial
 
-	// if form.UseTemplate && form.Body == "" => do we fetch GH template first?
-	if form.UseTemplate && form.Body == "" {
+	// Try to get PR template if body is empty
+	if form.Body == "" {
 		tmpl, _ := ghc.GetPRTemplate()
 		if tmpl != "" {
+			// Show preview of the template that will be used
+			preview := truncateBody(tmpl, 10, 80)
+			fmt.Printf("\nUsing PR Template:\n%s\n\n", preview)
 			form.Body = tmpl
 		}
 	}
