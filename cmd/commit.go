@@ -16,6 +16,8 @@ var (
 	pushAfterCommit bool
 	useAI           bool
 	autoAcceptAI    bool
+	suggestType     string
+	changeType      string
 )
 
 var commitCmd = &cobra.Command{
@@ -34,6 +36,8 @@ var commitCmd = &cobra.Command{
 			PushAfterCommit: pushAfterCommit,
 			UseAI:           useAI,
 			AutoAcceptAI:    autoAcceptAI,
+			SuggestType:     suggestType,
+			ChangeType:      changeType,
 		})
 		if err != nil {
 			return err
@@ -55,4 +59,6 @@ func init() {
 	commitCmd.Flags().BoolVarP(&pushAfterCommit, "push", "p", false, "Push after committing")
 	commitCmd.Flags().BoolVarP(&useAI, "ai", "a", false, "Use AI to generate commit message")
 	commitCmd.Flags().BoolVarP(&autoAcceptAI, "yes", "y", false, "Automatically accept AI generated commit message")
+	commitCmd.Flags().StringVar(&suggestType, "suggest-type", "", "Suggest a commit type to the AI (feat, fix, docs, etc)")
+	commitCmd.Flags().StringVar(&changeType, "type", "", "Change the type of the generated commit without regenerating")
 }

@@ -17,11 +17,32 @@ type CommitOptions struct {
 	PushAfterCommit bool
 	UseAI           bool
 	AutoAcceptAI    bool
+	SuggestType     string // Type to suggest to AI
+	ChangeType      string // Type to change to without regenerating
 }
 
 type CommitResult struct {
 	ActualMessage string
 	Pushed        bool
+}
+
+// changeCommitType changes the type of a conventional commit message
+func changeCommitType(msg, newType string) string {
+	if !strings.Contains(msg, ": ") {
+		return fmt.Sprintf("%s: %s", newType, msg)
+	}
+
+	parts := strings.SplitN(msg, ": ", 2)
+	oldType := parts[0]
+
+	// Handle scoped commits (e.g., feat(api): message)
+	if strings.Contains(oldType, "(") {
+		typeParts := strings.SplitN(oldType, "(", 2)
+		scope := "(" + typeParts[1] // includes the closing parenthesis
+		return fmt.Sprintf("%s%s: %s", newType, scope, parts[1])
+	}
+
+	return fmt.Sprintf("%s: %s", newType, parts[1])
 }
 
 func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
@@ -48,10 +69,19 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 		}
 		client := ai.NewClient("")
 		for {
-			msg, err := client.GenerateCommitMessage(diff)
+			var msg string
+			var err error
+
+			if opts.SuggestType != "" {
+				msg, err = client.GenerateCommitMessage(diff + "\n\nPlease use the commit type: " + opts.SuggestType)
+			} else {
+				msg, err = client.GenerateCommitMessage(diff)
+			}
+
 			if err != nil {
 				return nil, fmt.Errorf("failed to generate AI commit message: %w", err)
 			}
+
 			// Ensure the message is in conventional commit format
 			if !strings.Contains(msg, ":") {
 				msg = "chore: " + msg
@@ -66,7 +96,12 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 			confirm := ""
 			err = survey.AskOne(&survey.Select{
 				Message: "What would you like to do?",
-				Options: []string{"Accept", "Regenerate", "Enter manually"},
+				Options: []string{
+					"Accept",
+					"Regenerate",
+					"Change type",
+					"Enter manually",
+				},
 			}, &confirm)
 			if err != nil {
 				return nil, err
@@ -75,6 +110,20 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 			switch confirm {
 			case "Accept":
 				opts.Message = msg
+				break
+			case "Change type":
+				newType := ""
+				err = survey.AskOne(&survey.Select{
+					Message: "Select new commit type:",
+					Options: []string{
+						"feat", "fix", "docs", "style",
+						"refactor", "test", "chore",
+					},
+				}, &newType)
+				if err != nil {
+					return nil, err
+				}
+				opts.Message = changeCommitType(msg, newType)
 				break
 			case "Enter manually":
 				opts.UseAI = false
@@ -104,6 +153,11 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 		}
 	} else if opts.UseConventional && !strings.Contains(opts.Message, ":") {
 		opts.Message = "chore: " + opts.Message
+	}
+
+	// Handle type change if requested
+	if opts.ChangeType != "" {
+		opts.Message = changeCommitType(opts.Message, opts.ChangeType)
 	}
 
 	if !opts.AllowEmpty {
