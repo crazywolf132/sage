@@ -110,19 +110,31 @@ sage sync
 
 # View current branch status
 sage status
+
+# Clean up merged branches
+sage clean
 ```
 
 ### Changes & Commits
 
 ```bash
-# Stage and commit changes
+# Stage and commit changes (excluding .sage/ by default)
 sage commit "<message>"
+
+# Stage and commit with conventional commit format
+sage commit -c
+
+# Use AI to generate commit message based on changes
+sage commit --ai
 
 # Push changes to remote
 sage push
 
 # Undo last operation (commit, merge, etc)
 sage undo
+
+# Squash commits interactively
+sage squash
 ```
 
 ### Pull Request Operations
@@ -140,6 +152,12 @@ sage pr checkout <pr-number>
 # View PR status
 sage pr status [pr-number]
 
+# Update PR fields
+sage pr update [pr-number] [--title "<title>"] [--body "<body>"] [--draft] [--labels label1,label2] [--reviewers user1,user2]
+
+# Update PR with AI-generated content
+sage pr update --ai
+
 # Merge a PR
 sage pr merge <pr-number> [--method merge|squash|rebase]
 
@@ -147,7 +165,7 @@ sage pr merge <pr-number> [--method merge|squash|rebase]
 sage pr close <pr-number>
 
 # List PR review comments and TODOs
-sage pr todos
+sage pr todos [pr-number]
 ```
 
 ### Configuration
@@ -162,6 +180,8 @@ sage config set <key> <value>
 # Common config options:
 # - defaultBranch: Your main branch name (default: main)
 # - defaultMergeMethod: Preferred PR merge method (default: merge)
+# - conventionalCommits: Use conventional commit format (default: false)
+# - aiCommits: Use AI for commit messages (default: false)
 ```
 
 ### Other Commands
@@ -172,12 +192,22 @@ sage version
 
 # View help for any command
 sage help [command]
+
+# View detailed help for a specific command
+sage <command> --help
 ```
 
 ### Environment Variables
 
 - `SAGE_GITHUB_TOKEN` or `GITHUB_TOKEN`: Your GitHub personal access token
 - `SAGE_CONFIG`: Custom config file location
+- `SAGE_OPENAI_KEY`: OpenAI API key for AI features
+
+### Notes
+
+- The `.sage/` directory is excluded from commits by default unless explicitly staged
+- Use `git add -f .sage/` to force include the `.sage/` directory in commits
+- AI features require an OpenAI API key to be set
 
 ## Future Growth
 
