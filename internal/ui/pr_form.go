@@ -43,10 +43,10 @@ func AskPRForm(initial PRForm, ghc gh.Client) (PRForm, error) {
 
 	// Try to get PR template if body is empty
 	if form.Body == "" {
-		tmpl, _ := ghc.GetPRTemplate()
-		if tmpl != "" {
+		tmpl, err := ghc.GetPRTemplate()
+		if err == nil && tmpl != "" {
 			// Show preview of the template that will be used
-			preview := truncateBody(tmpl, 10, 80)
+			preview := truncateBody(tmpl, 5, 80)
 			fmt.Printf("\nUsing PR Template:\n%s\n\n", preview)
 			form.Body = tmpl
 		}
@@ -64,9 +64,11 @@ func AskPRForm(initial PRForm, ghc gh.Client) (PRForm, error) {
 		{
 			Name: "Body",
 			Prompt: &survey.Editor{
-				Message:  "Pull Request Description (body):",
-				FileName: "PR_BODY*.md",
-				Default:  form.Body,
+				Message:       "Pull Request Description (body):",
+				FileName:      "*.md",
+				Default:       form.Body,
+				AppendDefault: true,  // This ensures the template is included
+				HideDefault:   false, // Show the template in the editor
 			},
 		},
 		{
