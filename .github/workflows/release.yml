@@ -20,9 +20,6 @@ jobs:
           fetch-depth: 0  # Full history is needed for versioning
           fetch-tags: true  # Explicitly fetch tags
 
-      - name: Fetch all tags
-        run: git fetch --force --tags
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -43,28 +40,24 @@ jobs:
           
           if [ -z "$latest_tag" ]; then
             echo "No tags found, starting from v0.0.0"
-            # For first release, count all commits
             commits=$(git log --pretty=format:"%s")
             major=0
             minor=0
             patch=0
+            is_initial_release=true
           else
             echo "Latest tag: $latest_tag"
-            # Get commits since last tag
             commits=$(git log --pretty=format:"%s" ${latest_tag}..HEAD)
-            # Extract current version numbers
             version=${latest_tag#v}
             IFS='.' read -r major minor patch <<< "$version"
+            is_initial_release=false
           fi
           
-          # Exit early if no commits to analyze
-          if [ -z "$commits" ]; then
-            echo "No commits to analyze"
-            echo "SHOULD_RELEASE=false" >> $GITHUB_ENV
-            exit 0
-          fi
+          # Always analyze commits, even for initial release
+          echo "Analyzing commits..."
+          echo "$commits"
           
-          # Count meaningful changes with more precise patterns
+          # Count meaningful changes with precise patterns
           major_bump=$(echo "$commits" | grep -cE "^(feat|fix|refactor|perf)!:" || true)
           minor_bump=$(echo "$commits" | grep -cE "^(feat|refactor)(\([^)]+\))?:" || true)
           patch_bump=$(echo "$commits" | grep -cE "^fix(\([^)]+\))?:" || true)
@@ -72,19 +65,19 @@ jobs:
           # Calculate total meaningful changes
           meaningful_changes=$((major_bump + minor_bump + patch_bump))
           
-          # Count total commits for logging
-          total_commits=$(echo "$commits" | wc -l)
-          
           echo "Commits analysis:"
           echo "Major changes (breaking): $major_bump"
           echo "Minor changes (features): $minor_bump"
           echo "Patch changes (fixes): $patch_bump"
           echo "Total meaningful changes: $meaningful_changes"
-          echo "Total commits analyzed: $total_commits"
+          echo "Total commits: $(echo "$commits" | wc -l)"
           
-          # Determine if we should create a release
-          if [ $meaningful_changes -gt 0 ]; then
-            if [ $major_bump -gt 0 ]; then
+          # For initial release or if there are meaningful changes
+          if [ "$is_initial_release" = "true" ] || [ $meaningful_changes -gt 0 ]; then
+            if [ "$is_initial_release" = "true" ]; then
+              echo "This is the initial release"
+              minor=1  # Start with 0.1.0
+            elif [ $major_bump -gt 0 ]; then
               major=$((major + 1))
               minor=0
               patch=0
@@ -93,11 +86,6 @@ jobs:
               patch=0
             elif [ $patch_bump -gt 0 ]; then
               patch=$((patch + 1))
-            else
-              # If this is the first release, start with 0.1.0
-              if [ -z "$latest_tag" ]; then
-                minor=1
-              fi
             fi
             
             new_tag="v${major}.${minor}.${patch}"
@@ -112,15 +100,27 @@ jobs:
       - name: Create and push tag
         if: env.SHOULD_RELEASE == 'true'
         run: |
-          git tag ${{ env.NEW_TAG }}
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git tag -a ${{ env.NEW_TAG }} -m "Release ${{ env.NEW_TAG }}"
           git push origin ${{ env.NEW_TAG }}
+
+      - name: Verify tag
+        if: env.SHOULD_RELEASE == 'true'
+        run: |
+          # Verify the tag exists
+          if ! git show-ref --tags ${{ env.NEW_TAG }} --quiet; then
+            echo "Tag ${{ env.NEW_TAG }} not found"
+            exit 1
+          fi
 
       - name: Run GoReleaser
         if: env.SHOULD_RELEASE == 'true'
-        uses: goreleaser/goreleaser-action@v5
+        uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: latest
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+          GORELEASER_CURRENT_TAG: ${{ env.NEW_TAG }} 
