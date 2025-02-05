@@ -8,6 +8,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	useLocalConfig bool
+)
+
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Manage Sage configuration",
@@ -17,8 +21,10 @@ var configGetCmd = &cobra.Command{
 	Use:   "get <key>",
 	Args:  cobra.ExactArgs(1),
 	Short: "Get a config value",
+	Long: `Get a configuration value. By default, reads from the global config.
+Use --local to read from the local repository config instead.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		val := config.Get(args[0])
+		val := config.Get(args[0], useLocalConfig)
 		if val == "" {
 			fmt.Println(ui.Gray("not set"))
 		} else {
@@ -31,14 +37,20 @@ var configGetCmd = &cobra.Command{
 var configSetCmd = &cobra.Command{
 	Use:   "set <key> <value>",
 	Args:  cobra.ExactArgs(2),
-	Short: "Set a config value (by default in local config if in a repo, otherwise global)",
+	Short: "Set a config value",
+	Long: `Set a configuration value. By default, saves to the global config.
+Use --local to save to the local repository config instead.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key, value := args[0], args[1]
-		err := config.Set(key, value)
+		err := config.Set(key, value, useLocalConfig)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("%s %s=%s\n", ui.Green("Set"), key, value)
+		location := "global"
+		if useLocalConfig {
+			location = "local"
+		}
+		fmt.Printf("%s %s=%s (%s config)\n", ui.Green("Set"), key, value, location)
 		return nil
 	},
 }
@@ -111,4 +123,8 @@ func init() {
 	configCmd.AddCommand(configGetCmd)
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configListCmd)
+
+	// Add --local flag to get and set commands
+	configGetCmd.Flags().BoolVarP(&useLocalConfig, "local", "l", false, "Use local repository config")
+	configSetCmd.Flags().BoolVarP(&useLocalConfig, "local", "l", false, "Use local repository config")
 }

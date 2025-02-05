@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/BurntSushi/toml"
 	"github.com/crazywolf132/sage/internal/git"
@@ -28,21 +29,34 @@ func LoadAllConfigs() error {
 	return nil
 }
 
-func Get(key string) string {
-	if val, ok := localData[key]; ok {
-		return val
+func Get(key string, useLocal bool) string {
+	// If useLocal is true and we're in a repo, check local first
+	if useLocal {
+		g := git.NewShellGit()
+		repo, err := g.IsRepo()
+		if err == nil && repo {
+			if val, ok := localData[key]; ok {
+				return val
+			}
+		}
 	}
+	// Otherwise check global
 	if val, ok := globalData[key]; ok {
 		return val
 	}
 	return ""
 }
 
-func Set(key, value string) error {
-	// if in repo, write local. else global
-	g := git.NewShellGit()
-	repo, err := g.IsRepo()
-	if err == nil && repo {
+func Set(key, value string, useLocal bool) error {
+	if useLocal {
+		g := git.NewShellGit()
+		repo, err := g.IsRepo()
+		if err != nil {
+			return err
+		}
+		if !repo {
+			return errors.New("not in a git repository")
+		}
 		localData[key] = value
 		return writeLocalConfig()
 	}
@@ -53,11 +67,46 @@ func Set(key, value string) error {
 // load / write global
 
 func globalPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
+	var configDir string
+
+	switch runtime.GOOS {
+	case "windows":
+		// On Windows, use %APPDATA%
+		appData := os.Getenv("APPDATA")
+		if appData == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return "", err
+			}
+			appData = filepath.Join(home, "AppData", "Roaming")
+		}
+		configDir = filepath.Join(appData, "sage")
+	case "darwin":
+		// On macOS, use ~/Library/Application Support
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		configDir = filepath.Join(home, "Library", "Application Support", "sage")
+	default:
+		// On Linux and others, use XDG_CONFIG_HOME or ~/.config
+		xdgConfig := os.Getenv("XDG_CONFIG_HOME")
+		if xdgConfig == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return "", err
+			}
+			xdgConfig = filepath.Join(home, ".config")
+		}
+		configDir = filepath.Join(xdgConfig, "sage")
+	}
+
+	// Ensure the config directory exists
+	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".sage.toml"), nil
+
+	return filepath.Join(configDir, "config.toml"), nil
 }
 
 func loadGlobalConfig() error {
