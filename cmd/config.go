@@ -43,8 +43,72 @@ var configSetCmd = &cobra.Command{
 	},
 }
 
+var configListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List all available configuration properties",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		fmt.Printf("\n%s\n", ui.Sage("Available Configuration Properties:"))
+
+		// AI Configuration
+		fmt.Printf("\n%s\n", ui.Bold("AI Settings:"))
+		fmt.Printf("  %s\n    %s\n    %s %s\n",
+			ui.White("ai.model"),
+			"The AI model to use for generating content",
+			"Default:", ui.Gray("gpt-4"))
+		fmt.Printf("  %s\n    %s\n    %s %s\n",
+			ui.White("ai.base_url"),
+			"Base URL for the AI API endpoint",
+			"Default:", ui.Gray("https://api.openai.com/v1"))
+		fmt.Printf("  %s\n    %s\n    %s %s\n",
+			ui.White("ai.api_key"),
+			"API key for the AI service (can also be set via OPENAI_API_KEY env var)",
+			"Default:", ui.Gray("none"))
+
+		// Git Configuration
+		fmt.Printf("\n%s\n", ui.Bold("Git Settings:"))
+		fmt.Printf("  %s\n    %s\n    %s %s\n",
+			ui.White("git.default_branch"),
+			"Default branch to use when creating PRs or syncing",
+			"Default:", ui.Gray("main"))
+		fmt.Printf("  %s\n    %s\n    %s %s\n",
+			ui.White("git.merge_method"),
+			"Default merge method for PRs (merge, squash, rebase)",
+			"Default:", ui.Gray("merge"))
+
+		// GitHub Configuration
+		fmt.Printf("\n%s\n", ui.Bold("GitHub Settings:"))
+		fmt.Printf("  %s\n    %s\n    %s %s\n",
+			ui.White("github.token"),
+			"GitHub personal access token (can also be set via SAGE_GITHUB_TOKEN or GITHUB_TOKEN env vars)",
+			"Default:", ui.Gray("none"))
+
+		// PR Configuration
+		fmt.Printf("\n%s\n", ui.Bold("Pull Request Settings:"))
+		fmt.Printf("  %s\n    %s\n    %s %s\n",
+			ui.White("pr.draft"),
+			"Whether to create PRs as drafts by default",
+			"Default:", ui.Gray("false"))
+		fmt.Printf("  %s\n    %s\n    %s %s\n",
+			ui.White("pr.reviewers"),
+			"Default reviewers to assign to PRs (comma-separated)",
+			"Default:", ui.Gray("none"))
+		fmt.Printf("  %s\n    %s\n    %s %s\n",
+			ui.White("pr.labels"),
+			"Default labels to apply to PRs (comma-separated)",
+			"Default:", ui.Gray("none"))
+
+		fmt.Printf("\n%s\n", ui.Bold("Usage:"))
+		fmt.Printf("  Set a value:   %s\n", ui.White("sage config set <key> <value>"))
+		fmt.Printf("  Get a value:   %s\n", ui.White("sage config get <key>"))
+		fmt.Printf("  List values:   %s\n\n", ui.White("sage config list"))
+
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(configCmd)
 	configCmd.AddCommand(configGetCmd)
 	configCmd.AddCommand(configSetCmd)
+	configCmd.AddCommand(configListCmd)
 }

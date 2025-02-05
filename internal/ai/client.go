@@ -62,9 +62,12 @@ func NewClient(baseURL string) *Client {
 		model = "gpt-4o"
 	}
 
-	baseURL = config.Get("ai.base_url")
+	// Use passed baseURL first, then config, then default
 	if baseURL == "" {
-		baseURL = "https://api.openai.com/v1"
+		baseURL = config.Get("ai.base_url")
+		if baseURL == "" {
+			baseURL = "https://api.openai.com/v1"
+		}
 	}
 
 	apiKey := os.Getenv("OPENAI_API_KEY")
