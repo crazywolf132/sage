@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/crazywolf132/sage/internal/app"
 	"github.com/crazywolf132/sage/internal/gh"
 	"github.com/crazywolf132/sage/internal/git"
 	"github.com/crazywolf132/sage/internal/ui"
@@ -55,46 +56,16 @@ it will automatically update the PR body and labels based on the latest commits.
 			num = pr.Number
 		}
 
-		// Get current PR details
-		pr, err := ghc.GetPRDetails(num)
+		err = app.UpdatePR(ghc, g, num, app.PRUpdateOptions{
+			Title:     updateTitle,
+			Body:      updateBody,
+			Draft:     updateDraft,
+			UseAI:     updateAI,
+			Labels:    updateLabels,
+			Reviewers: updateReviewers,
+		})
 		if err != nil {
 			return err
-		}
-
-		if updateAI {
-			// TODO: Implement AI-powered updates
-			fmt.Printf("%s\n", ui.Yellow("AI-powered update not yet implemented"))
-			return nil
-		}
-
-		// Update fields if specified
-		if updateTitle != "" {
-			pr.Title = updateTitle
-		}
-		if updateBody != "" {
-			pr.Body = updateBody
-		}
-		if cmd.Flags().Changed("draft") {
-			pr.Draft = updateDraft
-		}
-
-		// Update the PR
-		if err := ghc.UpdatePR(num, pr); err != nil {
-			return err
-		}
-
-		// Update labels if specified
-		if len(updateLabels) > 0 {
-			if err := ghc.AddLabels(num, updateLabels); err != nil {
-				return err
-			}
-		}
-
-		// Update reviewers if specified
-		if len(updateReviewers) > 0 {
-			if err := ghc.RequestReviewers(num, updateReviewers); err != nil {
-				return err
-			}
 		}
 
 		fmt.Printf("%s\n", ui.Green(fmt.Sprintf("Successfully updated PR #%d", num)))

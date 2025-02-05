@@ -209,3 +209,73 @@ Respond with ONLY the commit message, no additional text or formatting.`
 
 	return strings.TrimSpace(response), nil
 }
+
+func (c *Client) GeneratePRDescription(commits, diff string) (string, error) {
+	prompt := fmt.Sprintf(`Based on these commits and changes, generate a comprehensive PR description:
+
+Commits:
+%s
+
+Changes:
+%s
+
+Please format the PR description in markdown with:
+1. A brief summary of changes
+2. Key implementation details
+3. Testing notes (if applicable)
+4. Breaking changes (if any)
+`, commits, diff)
+
+	return c.GenerateCommitMessage(prompt)
+}
+
+func (c *Client) GeneratePRLabels(commits, diff string) ([]string, error) {
+	prompt := fmt.Sprintf(`Based on these changes, suggest appropriate GitHub PR labels from this list:
+- feature
+- bug
+- documentation
+- enhancement
+- refactor
+- breaking
+- dependencies
+- testing
+
+Commits:
+%s
+
+Changes:
+%s
+
+Return only the label names, separated by commas.`, commits, diff)
+
+	response, err := c.GenerateCommitMessage(prompt)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse and clean labels
+	labels := strings.Split(strings.TrimSpace(response), ",")
+	for i := range labels {
+		labels[i] = strings.TrimSpace(labels[i])
+	}
+	return labels, nil
+}
+
+func (c *Client) GeneratePRTitle(commits, diff string) (string, error) {
+	prompt := fmt.Sprintf(`Based on these commits and changes, generate a concise but descriptive PR title.
+The title should be clear, informative, and follow these guidelines:
+1. Start with an action verb (e.g., Add, Update, Fix, Refactor)
+2. Be specific but concise (ideally under 72 characters)
+3. Focus on the main change or feature
+4. Don't include PR number or branch names
+
+Commits:
+%s
+
+Changes:
+%s
+
+Return only the title, no additional text or formatting.`, commits, diff)
+
+	return c.GenerateCommitMessage(prompt)
+}
