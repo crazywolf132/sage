@@ -33,9 +33,46 @@ func SyncBranch(g git.Service, abort, cont bool) error {
 		}
 		return fmt.Errorf("no merge or rebase to abort")
 	}
+
 	if cont {
-		// not fully implemented
-		return fmt.Errorf("merges or rebase continue not yet implemented here")
+		cur, err := g.CurrentBranch()
+		if err != nil {
+			return fmt.Errorf("failed to get current branch: %w", err)
+		}
+
+		db, err := g.DefaultBranch()
+		if err != nil {
+			db = "main"
+		}
+
+		var continueErr error
+		if merging {
+			continueErr = g.RunInteractive("merge", "--continue")
+		} else if rebase {
+			continueErr = g.RunInteractive("rebase", "--continue")
+		} else {
+			return fmt.Errorf("no merge or rebase in progress to continue")
+		}
+
+		if continueErr != nil {
+			return continueErr
+		}
+
+		// After successful continue, create conventional commit and push
+		if merging {
+			msg := fmt.Sprintf("merge(%s): sync with %s", cur, db)
+			if err := g.Commit(msg, false); err != nil {
+				return fmt.Errorf("failed to create merge commit: %w", err)
+			}
+		}
+
+		// Push the changes
+		if err := g.Push(cur, false); err != nil {
+			return fmt.Errorf("failed to push changes: %w", err)
+		}
+
+		fmt.Printf("%s Successfully continued and pushed changes to %s\n", ui.Green("✓"), cur)
+		return nil
 	}
 
 	// Get branch names
