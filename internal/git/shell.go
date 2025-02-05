@@ -132,6 +132,10 @@ func (s *shellGit) Pull() error {
 	return s.runInteractive("pull")
 }
 
+func (s *shellGit) PullFF() error {
+	return s.runInteractive("pull", "--ff-only")
+}
+
 func (s *shellGit) CreateBranch(name string) error {
 	_, err := s.run("branch", name)
 	return err

@@ -14,6 +14,7 @@ type Service interface {
 	FetchAll() error
 	Checkout(name string) error
 	Pull() error
+	PullFF() error
 	CreateBranch(name string) error
 	Merge(base string) error
 	MergeAbort() error

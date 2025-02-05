@@ -63,12 +63,17 @@ func SyncBranch(g git.Service, abort, cont bool) error {
 	}
 
 	fmt.Printf("%s Updating current branch %q\n", ui.Sage("ℹ"), cur)
-	if err := g.Pull(); err != nil {
-		// If pull fails, it might be because the branch doesn't exist on remote yet
-		if !strings.Contains(err.Error(), "no tracking information") {
+	if err := g.PullFF(); err != nil {
+		// If pull fails, it might be because:
+		// 1. The branch doesn't exist on remote
+		// 2. The branch has diverged and needs merge
+		if strings.Contains(err.Error(), "no tracking information") {
+			fmt.Printf("%s Branch %q not found on remote, skipping update\n", ui.Sage("ℹ"), cur)
+		} else if strings.Contains(err.Error(), "not possible to fast-forward") {
+			fmt.Printf("%s Branch %q has diverged from remote, skipping fast-forward\n", ui.Yellow("!"), cur)
+		} else {
 			return fmt.Errorf("failed to update current branch: %w", err)
 		}
-		fmt.Printf("%s Branch %q not found on remote, skipping update\n", ui.Sage("ℹ"), cur)
 	}
 
 	// Now sync with default branch
@@ -77,7 +82,10 @@ func SyncBranch(g git.Service, abort, cont bool) error {
 		return fmt.Errorf("failed to checkout %s: %w", db, err)
 	}
 
-	if err := g.Pull(); err != nil {
+	if err := g.PullFF(); err != nil {
+		if strings.Contains(err.Error(), "not possible to fast-forward") {
+			return fmt.Errorf("cannot fast-forward %s, please pull manually to resolve", db)
+		}
 		return fmt.Errorf("failed to update %s: %w", db, err)
 	}
 
