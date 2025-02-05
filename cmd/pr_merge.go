@@ -23,14 +23,16 @@ var prMergeCmd = &cobra.Command{
 
 		var num int
 		var err error
+		var currentBranch string
+
+		// Get current branch first as we'll need it later
+		currentBranch, err = g.CurrentBranch()
+		if err != nil {
+			return fmt.Errorf("failed to get current branch: %w", err)
+		}
 
 		if len(args) == 0 {
 			// No PR number provided, try to find PR for current branch
-			branch, err := g.CurrentBranch()
-			if err != nil {
-				return fmt.Errorf("failed to get current branch: %w", err)
-			}
-
 			// Get open PRs
 			prs, err := ghc.ListPRs("open")
 			if err != nil {
@@ -40,7 +42,7 @@ var prMergeCmd = &cobra.Command{
 			// Find PR for current branch
 			var found bool
 			for _, pr := range prs {
-				if pr.Head.Ref == branch {
+				if pr.Head.Ref == currentBranch {
 					num = pr.Number
 					found = true
 					break
@@ -48,7 +50,7 @@ var prMergeCmd = &cobra.Command{
 			}
 
 			if !found {
-				return fmt.Errorf("no open PR found for current branch %q", branch)
+				return fmt.Errorf("no open PR found for current branch %q", currentBranch)
 			}
 
 			fmt.Printf("%s Found PR #%d for current branch\n", ui.Sage("ℹ"), num)
@@ -60,6 +62,12 @@ var prMergeCmd = &cobra.Command{
 			}
 		}
 
+		// Get PR details to know the base branch
+		pr, err := ghc.GetPRDetails(num)
+		if err != nil {
+			return fmt.Errorf("failed to get PR details: %w", err)
+		}
+
 		if method == "" {
 			method = "merge"
 		}
@@ -69,6 +77,21 @@ var prMergeCmd = &cobra.Command{
 		}
 
 		fmt.Printf("%s Merged PR #%d with method=%s\n", ui.Green("✓"), num, method)
+
+		// If we're on the PR branch, switch back to base branch
+		if currentBranch == pr.Head.Ref {
+			fmt.Printf("%s Switching back to base branch %q\n", ui.Sage("ℹ"), pr.Base.Ref)
+			if err := g.Checkout(pr.Base.Ref); err != nil {
+				return fmt.Errorf("failed to switch to base branch: %w", err)
+			}
+
+			// Pull latest changes
+			if err := g.Pull(); err != nil {
+				return fmt.Errorf("failed to pull latest changes: %w", err)
+			}
+			fmt.Printf("%s Switched to %s and pulled latest changes\n", ui.Green("✓"), pr.Base.Ref)
+		}
+
 		return nil
 	},
 }
