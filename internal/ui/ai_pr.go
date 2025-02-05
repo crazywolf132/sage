@@ -24,16 +24,17 @@ func GenerateAIPRContent(g git.Service, ghc gh.Client) (PRForm, error) {
 		defaultBranch = "main" // fallback
 	}
 
-	// Get the diff
-	diff, err := g.GetDiff()
+	// Get the diff between current branch and default branch
+	// First get the diff of staged changes
+	stagedDiff, err := g.GetDiff()
 	if err != nil {
-		return form, fmt.Errorf("failed to get diff: %w", err)
+		return form, fmt.Errorf("failed to get staged changes: %w", err)
 	}
 
-	// Get commit messages
-	commits, err := g.Log(branch, 10, false, false)
+	// Get commit messages for this branch only (since branching from default branch)
+	commits, err := g.Log(fmt.Sprintf("%s..%s", defaultBranch, branch), 0, false, false)
 	if err != nil {
-		return form, fmt.Errorf("failed to get commit history: %w", err)
+		return form, fmt.Errorf("failed to get branch commit history: %w", err)
 	}
 
 	// Try to get PR template
@@ -43,7 +44,7 @@ func GenerateAIPRContent(g git.Service, ghc gh.Client) (PRForm, error) {
 	content, err := generatePRContent(GenerateInput{
 		Branch:        branch,
 		DefaultBranch: defaultBranch,
-		Diff:          diff,
+		Diff:          stagedDiff,
 		Commits:       commits,
 		Template:      template,
 	})
@@ -121,18 +122,75 @@ func extractBranchType(branch string) string {
 }
 
 func generateTitle(branch string, commits string) string {
-	// Remove prefix from branch name
+	// Extract type from branch name
+	branchType := extractBranchType(branch)
+	conventionalType := convertToConventionalType(branchType)
+
+	// Get the scope from the branch name if it exists
+	scope := extractScope(branch)
+
+	// Get a description from the branch name or first commit
+	description := extractDescription(branch, commits)
+
+	// Format as conventional commit
+	if scope != "" {
+		return fmt.Sprintf("%s(%s): %s", conventionalType, scope, description)
+	}
+	return fmt.Sprintf("%s: %s", conventionalType, description)
+}
+
+func convertToConventionalType(branchType string) string {
+	switch branchType {
+	case "feature":
+		return "feat"
+	case "bug":
+		return "fix"
+	case "documentation":
+		return "docs"
+	case "maintenance":
+		return "chore"
+	case "enhancement":
+		return "feat"
+	default:
+		return "chore"
+	}
+}
+
+func extractScope(branch string) string {
+	// Look for patterns like feature/api/... or feat/ui/...
+	parts := strings.Split(branch, "/")
+	if len(parts) >= 3 {
+		return parts[1]
+	}
+	return ""
+}
+
+func extractDescription(branch string, commits string) string {
+	// First try to get a meaningful description from the branch name
 	name := branch
-	if idx := strings.Index(branch, "/"); idx != -1 {
+	if idx := strings.LastIndex(branch, "/"); idx != -1 {
 		name = branch[idx+1:]
 	}
 
-	// Convert to title case and replace dashes/underscores with spaces
-	title := strings.ReplaceAll(name, "-", " ")
-	title = strings.ReplaceAll(title, "_", " ")
-	title = strings.Title(title)
+	// Clean up the branch name
+	name = strings.ReplaceAll(name, "-", " ")
+	name = strings.ReplaceAll(name, "_", " ")
+	name = strings.ToLower(name)
 
-	return title
+	// If the branch name is not descriptive enough, use the first commit message
+	if len(name) < 10 {
+		commitLines := strings.Split(commits, "\n")
+		if len(commitLines) > 0 && commitLines[0] != "" {
+			// If the commit message is already in conventional format, extract just the description
+			commit := commitLines[0]
+			if colonIdx := strings.Index(commit, ": "); colonIdx != -1 {
+				return strings.TrimSpace(commit[colonIdx+2:])
+			}
+			return strings.TrimSpace(commit)
+		}
+	}
+
+	return name
 }
 
 func fillTemplate(template string, input GenerateInput) string {
