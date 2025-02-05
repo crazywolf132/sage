@@ -262,12 +262,25 @@ Return only the label names, separated by commas.`, commits, diff)
 }
 
 func (c *Client) GeneratePRTitle(commits, diff string) (string, error) {
-	prompt := fmt.Sprintf(`Based on these commits and changes, generate a concise but descriptive PR title.
-The title should be clear, informative, and follow these guidelines:
-1. Start with an action verb (e.g., Add, Update, Fix, Refactor)
-2. Be specific but concise (ideally under 72 characters)
-3. Focus on the main change or feature
-4. Don't include PR number or branch names
+	prompt := fmt.Sprintf(`Based on these commits and changes, generate a PR title that follows the Conventional Commits specification.
+
+The title MUST follow this format:
+type(optional-scope): description
+
+Where type is one of:
+- feat: A new feature
+- fix: A bug fix
+- docs: Documentation changes
+- style: Code style changes (formatting, etc)
+- refactor: Code changes that neither fix a bug nor add a feature
+- test: Adding or modifying tests
+- chore: Changes to build process or auxiliary tools
+
+Guidelines:
+1. The description should be clear and concise (under 72 chars total)
+2. Use imperative mood ("add" not "added")
+3. Focus on the main change
+4. If there are breaking changes, add "!" after the type (e.g., "feat!: breaking change")
 
 Commits:
 %s
@@ -275,7 +288,7 @@ Commits:
 Changes:
 %s
 
-Return only the title, no additional text or formatting.`, commits, diff)
+Return only the conventional commit title, no additional text or formatting.`, commits, diff)
 
 	return c.GenerateCommitMessage(prompt)
 }
