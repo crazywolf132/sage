@@ -66,7 +66,7 @@ jobs:
           
           # Count meaningful changes with more precise patterns
           major_bump=$(echo "$commits" | grep -cE "^(feat|fix|refactor|perf)!:" || true)
-          minor_bump=$(echo "$commits" | grep -cE "^feat(\([^)]+\))?:" || true)
+          minor_bump=$(echo "$commits" | grep -cE "^(feat|refactor)(\([^)]+\))?:" || true)
           patch_bump=$(echo "$commits" | grep -cE "^fix(\([^)]+\))?:" || true)
           
           # Calculate total meaningful changes
