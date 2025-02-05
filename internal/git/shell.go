@@ -136,6 +136,10 @@ func (s *shellGit) PullFF() error {
 	return s.runInteractive("pull", "--ff-only")
 }
 
+func (s *shellGit) PullRebase() error {
+	return s.runInteractive("pull", "--rebase")
+}
+
 func (s *shellGit) CreateBranch(name string) error {
 	_, err := s.run("branch", name)
 	return err
@@ -244,4 +248,9 @@ func (s *shellGit) GetFirstCommit() (string, error) {
 		return "", fmt.Errorf("failed to get first commit: %w", err)
 	}
 	return strings.TrimSpace(out), nil
+}
+
+func (g *shellGit) RunInteractive(cmd string, args ...string) error {
+	cmdArgs := append([]string{cmd}, args...)
+	return g.runInteractive(cmdArgs...)
 }

@@ -63,14 +63,14 @@ func SyncBranch(g git.Service, abort, cont bool) error {
 	}
 
 	fmt.Printf("%s Updating current branch %q\n", ui.Sage("ℹ"), cur)
-	if err := g.PullFF(); err != nil {
+	if err := g.PullRebase(); err != nil {
 		// If pull fails, it might be because:
 		// 1. The branch doesn't exist on remote
-		// 2. The branch has diverged and needs merge
+		// 2. There are conflicts during rebase
 		if strings.Contains(err.Error(), "no tracking information") {
 			fmt.Printf("%s Branch %q not found on remote, skipping update\n", ui.Sage("ℹ"), cur)
-		} else if strings.Contains(err.Error(), "not possible to fast-forward") {
-			fmt.Printf("%s Branch %q has diverged from remote, skipping fast-forward\n", ui.Yellow("!"), cur)
+		} else if strings.Contains(err.Error(), "error: could not apply") {
+			return fmt.Errorf("rebase conflicts in %s - fix & run 'git rebase --continue' or 'sage sync -a' to abort", cur)
 		} else {
 			return fmt.Errorf("failed to update current branch: %w", err)
 		}
@@ -82,9 +82,9 @@ func SyncBranch(g git.Service, abort, cont bool) error {
 		return fmt.Errorf("failed to checkout %s: %w", db, err)
 	}
 
-	if err := g.PullFF(); err != nil {
-		if strings.Contains(err.Error(), "not possible to fast-forward") {
-			return fmt.Errorf("cannot fast-forward %s, please pull manually to resolve", db)
+	if err := g.PullRebase(); err != nil {
+		if strings.Contains(err.Error(), "error: could not apply") {
+			return fmt.Errorf("rebase conflicts in %s - fix & run 'git rebase --continue' or 'sage sync -a' to abort", db)
 		}
 		return fmt.Errorf("failed to update %s: %w", db, err)
 	}
@@ -93,14 +93,14 @@ func SyncBranch(g git.Service, abort, cont bool) error {
 		return fmt.Errorf("failed to checkout back to %s: %w", cur, err)
 	}
 
-	// do a merge
-	if err := g.Merge(db); err != nil {
-		if strings.Contains(err.Error(), "CONFLICT") {
-			return fmt.Errorf("conflict - fix & run 'sage sync -c' or 'sage sync -a'")
+	// do a rebase instead of merge
+	if err := g.RunInteractive("rebase", db); err != nil {
+		if strings.Contains(err.Error(), "error: could not apply") {
+			return fmt.Errorf("rebase conflicts - fix & run 'git rebase --continue' or 'sage sync -a' to abort")
 		}
-		return fmt.Errorf("failed to merge %s into %s: %w", db, cur, err)
+		return fmt.Errorf("failed to rebase %s onto %s: %w", cur, db, err)
 	}
 
-	fmt.Printf("%s Successfully synced %s with %s\n", ui.Green("✓"), cur, db)
+	fmt.Printf("%s Successfully rebased %s onto %s\n", ui.Green("✓"), cur, db)
 	return nil
 }

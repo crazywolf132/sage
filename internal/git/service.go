@@ -15,6 +15,7 @@ type Service interface {
 	Checkout(name string) error
 	Pull() error
 	PullFF() error
+	PullRebase() error
 	CreateBranch(name string) error
 	Merge(base string) error
 	MergeAbort() error
@@ -28,4 +29,5 @@ type Service interface {
 	SquashCommits(startCommit string) error
 	IsHeadBranch(branch string) (bool, error)
 	GetFirstCommit() (string, error)
+	RunInteractive(cmd string, args ...string) error
 }
