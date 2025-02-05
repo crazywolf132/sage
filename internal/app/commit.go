@@ -51,7 +51,23 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 		return nil, err
 	}
 	if !isRepo {
-		return nil, fmt.Errorf("no a git repo")
+		return nil, fmt.Errorf("not a git repository")
+	}
+
+	// Check if .sage/ is already staged
+	sageStaged, err := g.IsPathStaged(".sage/")
+	if err != nil {
+		return nil, err
+	}
+
+	// Stage all files, excluding .sage/ if it's not already staged
+	if sageStaged {
+		err = g.StageAll()
+	} else {
+		err = g.StageAllExcept([]string{".sage/"})
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	if opts.UseAI && !opts.AllowEmpty {

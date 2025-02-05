@@ -254,3 +254,66 @@ func (g *shellGit) RunInteractive(cmd string, args ...string) error {
 	cmdArgs := append([]string{cmd}, args...)
 	return g.runInteractive(cmdArgs...)
 }
+
+func (s *shellGit) IsPathStaged(path string) (bool, error) {
+	// First check if the path exists in the working tree
+	out, err := s.run("ls-files", path)
+	if err != nil {
+		// If path doesn't exist, it's not staged
+		return false, nil
+	}
+
+	// If path exists, check if it's staged
+	out, err = s.run("diff", "--cached", "--name-only", "--", path)
+	if err != nil {
+		return false, nil
+	}
+	return strings.TrimSpace(out) != "", nil
+}
+
+func (s *shellGit) StageAllExcept(excludePaths []string) error {
+	// First, get all changes
+	out, err := s.run("status", "--porcelain")
+	if err != nil {
+		return err
+	}
+
+	// Process each changed file
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line == "" {
+			continue
+		}
+
+		// Status format is XY PATH or XY PATH -> PATH2 for renames
+		// X is status in staging area, Y is status in working tree
+		status := line[:2]
+		path := strings.TrimSpace(line[3:])
+
+		// Handle renamed files
+		if strings.Contains(path, " -> ") {
+			parts := strings.Split(path, " -> ")
+			path = parts[1] // Use the new path
+		}
+
+		// Check if this path should be excluded
+		shouldExclude := false
+		for _, excludePath := range excludePaths {
+			if strings.HasPrefix(path, excludePath) {
+				shouldExclude = true
+				break
+			}
+		}
+
+		if !shouldExclude {
+			// Only add if the file is modified, added, or deleted in working tree
+			// Skip if it's already staged (X is not space)
+			if status[0] == ' ' && (status[1] == 'M' || status[1] == 'A' || status[1] == 'D') {
+				_, err := s.run("add", "--", path)
+				if err != nil {
+					return fmt.Errorf("failed to stage %s: %w", path, err)
+				}
+			}
+		}
+	}
+	return nil
+}

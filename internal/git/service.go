@@ -4,6 +4,8 @@ type Service interface {
 	IsRepo() (bool, error)
 	IsClean() (bool, error)
 	StageAll() error
+	StageAllExcept(excludePaths []string) error
+	IsPathStaged(path string) (bool, error)
 	Commit(msg string, allowEmpty bool) error
 	CurrentBranch() (string, error)
 	Push(branch string, force bool) error
