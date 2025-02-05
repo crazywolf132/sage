@@ -1,6 +1,8 @@
 package gh
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -21,6 +23,7 @@ type Client interface {
 	AddLabels(prNumber int, labels []string) error
 	RequestReviewers(prNumber int, reviewers []string) error
 	GetPRForBranch(branchName string) (*PullRequest, error)
+	UpdatePR(num int, pr *PullRequest) error
 }
 
 // pullRequestAPI is a minimal data holder for GH API calls
@@ -137,4 +140,45 @@ func discoverOwnerRepo() (string, string) {
 		return "unknown", "unknown"
 	}
 	return parts[0], strings.TrimSuffix(parts[1], ".git")
+}
+
+// UpdatePR updates the specified pull request with new details
+func (c *pullRequestAPI) UpdatePR(num int, pr *PullRequest) error {
+	// Build the update request
+	data := map[string]interface{}{
+		"title": pr.Title,
+		"body":  pr.Body,
+		"draft": pr.Draft,
+	}
+
+	// Make the PATCH request to update the PR
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/pulls/%d", c.owner, c.repo, num)
+	req, err := http.NewRequest("PATCH", url, strings.NewReader(jsonEncode(data)))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to update PR: %s", resp.Status)
+	}
+
+	return nil
+}
+
+func jsonEncode(v interface{}) string {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
 }
