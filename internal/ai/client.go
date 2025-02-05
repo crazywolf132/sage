@@ -57,14 +57,14 @@ type Usage struct {
 
 // NewClient creates a new Ollama client.
 func NewClient(baseURL string) *Client {
-	model := config.Get("ai.model")
+	model := config.Get("ai.model", false)
 	if model == "" {
 		model = "gpt-4o"
 	}
 
 	// Use passed baseURL first, then config, then default
 	if baseURL == "" {
-		baseURL = config.Get("ai.base_url")
+		baseURL = config.Get("ai.base_url", false)
 		if baseURL == "" {
 			baseURL = "https://api.openai.com/v1"
 		}
@@ -72,7 +72,7 @@ func NewClient(baseURL string) *Client {
 
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
-		apiKey = config.Get("ai.api_key")
+		apiKey = config.Get("ai.api_key", false)
 	}
 
 	return &Client{
