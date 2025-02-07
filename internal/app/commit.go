@@ -96,7 +96,7 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 		return nil, fmt.Errorf("not a git repository")
 	}
 
-	// Get the list of changed files first
+	// Get the current status
 	status, err := g.StatusPorcelain()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get status: %w", err)
@@ -120,22 +120,21 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 		}
 
 		// Include files that are:
-		// - Not fully staged (X is space or ?)
 		// - Modified (M), Added/untracked (A/?), Deleted (D), or Renamed (R)
-		// We need to check both X and Y because files can be partially staged
+		// - Either staged (X) or unstaged (Y)
 		x, y := statusCode[0], statusCode[1]
-		isUnstaged := x == ' ' || x == '?' || y == 'M' || y == 'A' || y == '?' || y == 'D' || y == 'R'
+		isChanged := (x != ' ' && x != '?') || (y != ' ' && y != '?')
 
-		if isUnstaged {
+		if isChanged {
 			var humanStatus string
 			switch {
-			case y == 'M' || x == 'M':
+			case x == 'M' || y == 'M':
 				humanStatus = "Modified"
-			case y == 'A' || y == '?' || x == 'A':
+			case x == 'A' || y == 'A' || y == '?':
 				humanStatus = "Added"
-			case y == 'D' || x == 'D':
+			case x == 'D' || y == 'D':
 				humanStatus = "Deleted"
-			case y == 'R' || x == 'R':
+			case x == 'R' || y == 'R':
 				humanStatus = "Renamed"
 			default:
 				humanStatus = "Unknown"
@@ -148,7 +147,7 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 		}
 	}
 
-	if len(files) == 0 {
+	if len(files) == 0 && !opts.AllowEmpty {
 		return nil, fmt.Errorf("no changes to commit")
 	}
 

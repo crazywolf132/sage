@@ -192,42 +192,51 @@ func (s *shellGit) ListBranches() ([]string, error) {
 }
 
 func (s *shellGit) Log(branch string, limit int, stats, all bool) (string, error) {
-	// Use a more descriptive format that includes the commit message body
-	args := []string{"log", branch, `--format=%s%n%b%n---`}
-	if limit > 0 {
+	// Build the git log command with a custom format
+	args := []string{
+		"log",
+		"--pretty=format:%H%x00%an%x00%at%x00%s", // Use null bytes as separators
+	}
+
+	if limit > 0 && !all {
 		args = append(args, "-n", strconv.Itoa(limit))
 	}
+
 	if stats {
 		args = append(args, "--numstat")
 	}
+
+	if branch != "" {
+		args = append(args, branch)
+	}
+
 	out, err := s.run(args...)
 	if err != nil {
 		return "", err
 	}
 
-	// Clean up the output
-	commits := strings.Split(out, "\n---\n")
-	var result []string
-	for _, commit := range commits {
-		commit = strings.TrimSpace(commit)
-		if commit != "" {
-			result = append(result, commit)
-		}
-	}
-
-	return strings.Join(result, "\n"), nil
+	return out, nil
 }
 
 func (s *shellGit) GetDiff() (string, error) {
-	output, err := s.run("diff", "--staged")
+	// First check if there are staged changes
+	stagedDiff, err := s.run("diff", "--cached")
 	if err != nil {
-		// If there's an error, try getting unstaged changes
-		output, err = s.run("diff")
-		if err != nil {
-			return "", err
-		}
+		return "", fmt.Errorf("failed to get staged changes: %w", err)
 	}
-	return output, nil
+
+	// If there are staged changes, return those
+	if strings.TrimSpace(stagedDiff) != "" {
+		return stagedDiff, nil
+	}
+
+	// If no staged changes, get unstaged changes
+	unstagedDiff, err := s.run("diff")
+	if err != nil {
+		return "", fmt.Errorf("failed to get unstaged changes: %w", err)
+	}
+
+	return unstagedDiff, nil
 }
 
 func (s *shellGit) SquashCommits(startCommit string) error {
