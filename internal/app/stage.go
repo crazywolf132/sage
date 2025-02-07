@@ -42,29 +42,28 @@ func StageFiles(g git.Service, patterns []string, useAI bool) error {
 		statusCode := line[:2]
 		path := strings.TrimSpace(line[3:])
 
-		// Handle renamed files
 		if strings.Contains(path, " -> ") {
 			parts := strings.Split(path, " -> ")
 			path = parts[1] // Use the new path
 		}
 
 		// Include files that are:
-		// - Modified in working tree (M)
-		// - Added/untracked (A or ?)
-		// - Deleted (D)
-		// - Renamed (R)
-		// And not already staged (X is space or ?)
-		if statusCode[0] == ' ' || statusCode[0] == '?' {
-			// Get human-readable status
+		// - Not fully staged (X is space or ?)
+		// - Modified (M), Added/untracked (A/?), Deleted (D), or Renamed (R)
+		// We need to check both X and Y because files can be partially staged
+		x, y := statusCode[0], statusCode[1]
+		isUnstaged := x == ' ' || x == '?' || y == 'M' || y == 'A' || y == '?' || y == 'D' || y == 'R'
+
+		if isUnstaged {
 			var humanStatus string
-			switch statusCode[1] {
-			case 'M':
+			switch {
+			case y == 'M' || x == 'M':
 				humanStatus = "Modified"
-			case 'A', '?':
+			case y == 'A' || y == '?' || x == 'A':
 				humanStatus = "Added"
-			case 'D':
+			case y == 'D' || x == 'D':
 				humanStatus = "Deleted"
-			case 'R':
+			case y == 'R' || x == 'R':
 				humanStatus = "Renamed"
 			default:
 				humanStatus = "Unknown"

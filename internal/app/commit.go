@@ -46,6 +46,47 @@ func changeCommitType(msg, newType string) string {
 	return fmt.Sprintf("%s: %s", newType, parts[1])
 }
 
+const (
+	// Maximum size in bytes for a single AI request
+	maxAIRequestSize = 4000 // Conservative limit to leave room for prompts
+)
+
+// chunkChanges splits a large diff into smaller, manageable chunks
+func chunkChanges(files []FileStatus) [][]FileStatus {
+	var chunks [][]FileStatus
+	var currentChunk []FileStatus
+	var currentSize int
+
+	for _, file := range files {
+		// Estimate the size this file will add
+		fileSize := len(file.Path) * 2 // Path appears twice: in list and in diff
+		if file.Status == "Added" {
+			// For new files, read their content to estimate size
+			content, err := os.ReadFile(file.Path)
+			if err == nil {
+				fileSize += len(content)
+			}
+		}
+
+		// If adding this file would exceed the limit, start a new chunk
+		if currentSize+fileSize > maxAIRequestSize && len(currentChunk) > 0 {
+			chunks = append(chunks, currentChunk)
+			currentChunk = []FileStatus{}
+			currentSize = 0
+		}
+
+		currentChunk = append(currentChunk, file)
+		currentSize += fileSize
+	}
+
+	// Add the last chunk if it's not empty
+	if len(currentChunk) > 0 {
+		chunks = append(chunks, currentChunk)
+	}
+
+	return chunks
+}
+
 func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 	isRepo, err := g.IsRepo()
 	if err != nil {
@@ -55,61 +96,153 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 		return nil, fmt.Errorf("not a git repository")
 	}
 
+	// Get the list of changed files first
+	status, err := g.StatusPorcelain()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get status: %w", err)
+	}
+
+	// Parse status into FileStatus structs
+	var files []FileStatus
+	for _, line := range strings.Split(strings.TrimSpace(status), "\n") {
+		if line == "" {
+			continue
+		}
+
+		// Status format is XY PATH or XY PATH -> PATH2 for renames
+		// X is status in staging area, Y is status in working tree
+		statusCode := line[:2]
+		path := strings.TrimSpace(line[3:])
+
+		if strings.Contains(path, " -> ") {
+			parts := strings.Split(path, " -> ")
+			path = parts[1]
+		}
+
+		// Include files that are:
+		// - Not fully staged (X is space or ?)
+		// - Modified (M), Added/untracked (A/?), Deleted (D), or Renamed (R)
+		// We need to check both X and Y because files can be partially staged
+		x, y := statusCode[0], statusCode[1]
+		isUnstaged := x == ' ' || x == '?' || y == 'M' || y == 'A' || y == '?' || y == 'D' || y == 'R'
+
+		if isUnstaged {
+			var humanStatus string
+			switch {
+			case y == 'M' || x == 'M':
+				humanStatus = "Modified"
+			case y == 'A' || y == '?' || x == 'A':
+				humanStatus = "Added"
+			case y == 'D' || x == 'D':
+				humanStatus = "Deleted"
+			case y == 'R' || x == 'R':
+				humanStatus = "Renamed"
+			default:
+				humanStatus = "Unknown"
+			}
+
+			files = append(files, FileStatus{
+				Path:   path,
+				Status: humanStatus,
+			})
+		}
+	}
+
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no changes to commit")
+	}
+
 	// Check if .sage/ is already staged
 	sageStaged, err := g.IsPathStaged(".sage/")
 	if err != nil {
 		return nil, err
 	}
 
-	// Stage all files, excluding .sage/ if it's not already staged
-	if sageStaged {
-		err = g.StageAll()
-	} else {
-		err = g.StageAllExcept([]string{".sage/"})
-	}
-	if err != nil {
-		return nil, err
-	}
-
 	if opts.UseAI && !opts.AllowEmpty {
-		// Stage all files first
-		if err := g.StageAll(); err != nil {
-			return nil, fmt.Errorf("failed to stage files: %w", err)
+		// Split changes into chunks if needed
+		chunks := chunkChanges(files)
+		if len(chunks) > 1 {
+			fmt.Printf("%s Changes are large, analyzing in %d chunks\n", ui.Sage("ℹ"), len(chunks))
 		}
 
-		diff, err := g.GetDiff()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get diff for AI commit message: %w", err)
-		}
-		if diff == "" {
-			return nil, fmt.Errorf("no changes to commit; use --empty to allow empty")
-		}
 		client := ai.NewClient("")
-		for {
-			var msg string
-			var err error
+		if client.APIKey == "" {
+			return nil, fmt.Errorf("AI features require an OpenAI API key")
+		}
 
+		var allMessages []string
+
+		// Process each chunk
+		for i, chunk := range chunks {
+			if len(chunks) > 1 {
+				fmt.Printf("%s Analyzing chunk %d/%d (%d files)\n", ui.Sage("ℹ"), i+1, len(chunks), len(chunk))
+			}
+
+			// Build diff for this chunk
+			var diffBuilder strings.Builder
+			diffBuilder.WriteString("Files changed:\n")
+			for _, file := range chunk {
+				diffBuilder.WriteString(fmt.Sprintf("- %s (%s)\n", file.Path, file.Status))
+			}
+			diffBuilder.WriteString("\nChanges:\n")
+
+			// Stage files temporarily to get their diff
+			for _, file := range chunk {
+				if err := g.RunInteractive("add", "--intent-to-add", file.Path); err != nil {
+					continue
+				}
+			}
+
+			// Get the diff for all files in this chunk
+			diff, err := g.GetDiff()
+			if err == nil {
+				diffBuilder.WriteString("```diff\n")
+				diffBuilder.WriteString(diff)
+				diffBuilder.WriteString("\n```\n")
+			}
+
+			// Unstage the files
+			for _, file := range chunk {
+				g.RunInteractive("restore", "--staged", file.Path)
+			}
+
+			// Generate commit message for this chunk
+			prompt := diffBuilder.String()
 			if opts.SuggestType != "" {
-				msg, err = client.GenerateCommitMessage(diff + "\n\nPlease use the commit type: " + opts.SuggestType)
-			} else {
-				msg, err = client.GenerateCommitMessage(diff)
+				prompt += "\n\nPlease use the commit type: " + opts.SuggestType
 			}
 
+			msg, err := client.GenerateCommitMessage(prompt)
 			if err != nil {
-				return nil, fmt.Errorf("failed to generate AI commit message: %w", err)
+				return nil, fmt.Errorf("failed to generate AI commit message for chunk %d: %w", i+1, err)
 			}
 
-			// Ensure the message is in conventional commit format
-			if !strings.Contains(msg, ":") {
-				msg = "chore: " + msg
-			}
+			allMessages = append(allMessages, msg)
+		}
 
-			if opts.AutoAcceptAI {
-				opts.Message = msg
-				break
-			}
+		// If we had multiple chunks, generate a summary message
+		var finalMessage string
+		if len(chunks) > 1 {
+			summaryPrompt := fmt.Sprintf("Here are commit messages for different parts of the changes:\n\n%s\n\nPlease create a single, comprehensive commit message that summarizes all these changes.",
+				strings.Join(allMessages, "\n"))
 
-			fmt.Printf("Generated commit message: %q\n", msg)
+			finalMessage, err = client.GenerateCommitMessage(summaryPrompt)
+			if err != nil {
+				return nil, fmt.Errorf("failed to generate summary commit message: %w", err)
+			}
+		} else {
+			finalMessage = allMessages[0]
+		}
+
+		// Ensure the message is in conventional commit format
+		if !strings.Contains(finalMessage, ":") {
+			finalMessage = "chore: " + finalMessage
+		}
+
+		if opts.AutoAcceptAI {
+			opts.Message = finalMessage
+		} else {
+			fmt.Printf("Generated commit message: %q\n", finalMessage)
 			confirm := ""
 			err = survey.AskOne(&survey.Select{
 				Message: "What would you like to do?",
@@ -126,8 +259,7 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 
 			switch confirm {
 			case "Accept":
-				opts.Message = msg
-				break
+				opts.Message = finalMessage
 			case "Change type":
 				newType := ""
 				err = survey.AskOne(&survey.Select{
@@ -140,17 +272,13 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 				if err != nil {
 					return nil, err
 				}
-				opts.Message = changeCommitType(msg, newType)
-				break
+				opts.Message = changeCommitType(finalMessage, newType)
 			case "Enter manually":
 				opts.UseAI = false
 				opts.Message = ""
-				break
-				// For "Regenerate", continue the loop
-			}
-
-			if opts.Message != "" || !opts.UseAI {
-				break
+			default:
+				// For "Regenerate", just return and let the user try again
+				return nil, fmt.Errorf("regenerate requested, please try again")
 			}
 		}
 	} else if opts.Message == "" {
@@ -177,17 +305,14 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 		opts.Message = changeCommitType(opts.Message, opts.ChangeType)
 	}
 
-	if !opts.AllowEmpty {
-		clean, err := g.IsClean()
-		if err != nil {
-			return nil, err
-		}
-		if clean {
-			return nil, fmt.Errorf("no changes to commit; use --empty to allow empty")
-		}
-		if err := g.StageAll(); err != nil {
-			return nil, err
-		}
+	// Now stage all files
+	if sageStaged {
+		err = g.StageAll()
+	} else {
+		err = g.StageAllExcept([]string{".sage/"})
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	if err := g.Commit(opts.Message, opts.AllowEmpty); err != nil {
@@ -227,6 +352,8 @@ func CommitMultiple(g git.Service, opts CommitOptions) error {
 			continue
 		}
 
+		// Status format is XY PATH or XY PATH -> PATH2 for renames
+		// X is status in staging area, Y is status in working tree
 		statusCode := line[:2]
 		path := strings.TrimSpace(line[3:])
 
@@ -235,16 +362,23 @@ func CommitMultiple(g git.Service, opts CommitOptions) error {
 			path = parts[1]
 		}
 
-		if statusCode[0] == ' ' || statusCode[0] == '?' {
+		// Include files that are:
+		// - Not fully staged (X is space or ?)
+		// - Modified (M), Added/untracked (A/?), Deleted (D), or Renamed (R)
+		// We need to check both X and Y because files can be partially staged
+		x, y := statusCode[0], statusCode[1]
+		isUnstaged := x == ' ' || x == '?' || y == 'M' || y == 'A' || y == '?' || y == 'D' || y == 'R'
+
+		if isUnstaged {
 			var humanStatus string
-			switch statusCode[1] {
-			case 'M':
+			switch {
+			case y == 'M' || x == 'M':
 				humanStatus = "Modified"
-			case 'A', '?':
+			case y == 'A' || y == '?' || x == 'A':
 				humanStatus = "Added"
-			case 'D':
+			case y == 'D' || x == 'D':
 				humanStatus = "Deleted"
-			case 'R':
+			case y == 'R' || x == 'R':
 				humanStatus = "Renamed"
 			default:
 				humanStatus = "Unknown"
