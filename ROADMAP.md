@@ -1,58 +1,116 @@
-# Sage Roadmap
+# Sage Roadmap 🗺️
 
-This document lays out the direction and aspirations for Sage. As a single-maintainer project, progress will depend on available time and community contributions. If you'd like to help or suggest ideas, feel free to open an issue or pull request.
+This document outlines the planned features and improvements for Sage. The roadmap is organized by priority and complexity, helping guide the project's development while maintaining its core philosophy of simplifying Git workflows.
 
-## Short-Term (0–3 Months)
+## Short-term Goals (Next 1-3 months) 🎯
 
-### 1. Better Undo Mechanism
-- Track a history of Sage commands (commit, push, merge, etc.) in a simple log to allow multiple undo steps, not just the last operation.
+### Branch Templates
+- [ ] Configurable branch naming patterns
+- [ ] Integration with issue tracking systems for automatic branch naming
+- [ ] Template validation and enforcement
+- [ ] Custom prefix support (feature/, bugfix/, hotfix/, etc.)
 
-### 2. Improved Tests & CI
-- Add unit tests for critical commands (commit, push, undo), plus integration tests using temporary Git repositories.
-- Set up a continuous integration pipeline (GitHub Actions or similar) to ensure new commits don't break core functionality.
+### Enhanced Cleanup Tools
+- [ ] Smart branch cleanup with staleness detection
+- [ ] Interactive cleanup mode with branch status overview
+- [ ] Backup mechanism for deleted branches
+- [ ] Bulk cleanup operations with preview
 
-### 3. Enhanced GitHub Integration
-- Add flags for PR subcommands to set reviewers, assignees, or labels (e.g., `--reviewers @alice,@bob`).
-- Allow searching/filtering PRs by label or author.
+### Commit Message Improvements
+- [ ] Team-specific commit message templates
+- [ ] Issue tracker integration for automatic references
+- [ ] Enhanced AI commit message suggestions
+- [ ] Commit message validation rules
 
-### 4. Documentation Updates
-- Expand the README and wiki to include detailed usage examples, known workarounds, and best practices.
-- Provide a quick "Getting Started" guide for each major feature (start, commit, push, PR create, etc.).
+## Medium-term Goals (3-6 months) 🌱
 
-## Medium-Term (3–6 Months)
+### Advanced PR Management
+- [ ] Branch-type specific PR templates
+- [ ] Automatic PR labeling based on changes
+- [ ] Smart reviewer suggestions
+- [ ] PR size analysis and warnings
+- [ ] Custom PR workflows
 
-### 1. Interactive Conflict Resolution
-- Develop a minimal TUI or guided approach for merges and rebases that have conflicts—e.g., show conflicting files, allow the user to pick a resolution, and continue with one command.
+### Git Analytics
+- [ ] `sage stats` command implementation
+- [ ] Branch activity metrics
+- [ ] Conflict hotspot identification
+- [ ] Team contribution insights
+- [ ] Performance impact analysis
 
-### 2. Plugin/Extension System
-- Design a way to register custom commands or hooks, so teams can integrate their own checks, commands, or pre-push steps without forking the entire codebase.
+### Conflict Resolution Tools
+- [ ] AI-powered conflict resolution suggestions
+- [ ] Interactive TUI for conflict management
+- [ ] Automatic stash and workspace management
+- [ ] Preventive conflict warnings
 
-### 3. Support More Git Providers
-- Add optional configuration or subcommands for Bitbucket, GitLab, etc. Possibly detect the remote host automatically and adapt PR commands accordingly.
+## Long-term Goals (6+ months) 🚀
 
-### 4. Refined Undo & Safety
-- Provide explicit logging so a user can do `sage history` to see recent actions and revert a specific step.
-- Store temporary references for merges/rebases in a safer or more standardized way.
+### Git Hooks Framework
+- [ ] Simplified hook management system
+- [ ] Pre-built hook templates
+- [ ] Team-shared hook configurations
+- [ ] Hook bypass system with logging
 
-## Long-Term (6+ Months)
+### Workspace Management
+- [ ] Context saving and restoration
+- [ ] Feature context switching
+- [ ] Automatic stash management
+- [ ] WIP state tracking
 
-### 1. Full "Wizard" Mode
-- Provide an optional interactive flow for new users: a step-by-step guide through starting a branch, committing, pushing, and opening a PR, with descriptions of what's happening behind the scenes.
+### Advanced Undo System
+- [ ] Multi-level undo capabilities
+- [ ] Operation categorization
+- [ ] Selective undo functionality
+- [ ] Visual undo history
 
-### 2. Deeper Policy/Checks Integration
-- Let users define rules (e.g., "Always require JIRA ticket number in commit messages," "Run unit tests before pushing," etc.).
-- Possibly integrate with local or remote CI to block merges that don't pass checks.
+### Smart Synchronization
+- [ ] Intelligent merge strategy selection
+- [ ] Upstream change detection
+- [ ] Background sync system
+- [ ] Dependency update tracking
 
-### 3. Enhanced Cross-Platform Support
-- Test thoroughly on Windows, macOS, and Linux to handle differences in path usage, environment variables, ANSI color handling, etc.
-- Provide fallback or detection logic if certain OS-level features aren't available.
+## Continuous Improvements 🔄
 
-### 4. Community Growth & Governance
-- Encourage more contributors to become maintainers, ensuring long-term stability.
-- Possibly set up a Slack/Discord channel for users to ask questions or share tips.
+### Performance
+- [ ] Command execution optimization
+- [ ] Caching improvements
+- [ ] Resource usage optimization
+- [ ] Startup time reduction
 
-## Feedback & Contribution
+### User Experience
+- [ ] Enhanced error messages
+- [ ] Interactive help system
+- [ ] Command suggestions
+- [ ] Progress indicators
 
-This roadmap is a living document, not a strict timeline. If you have ideas or feel something should be prioritized, open an issue or join an existing discussion. The main goal of Sage is to make Git usage simpler and safer—so any features that further this mission are welcome.
+### Documentation
+- [ ] Comprehensive command documentation
+- [ ] Use case examples
+- [ ] Best practices guide
+- [ ] Video tutorials
 
-Thank you for your support and interest in Sage!
+## Notes 📝
+
+- This roadmap is a living document and will be updated based on:
+  - Community feedback and requests
+  - Usage patterns and pain points
+  - Technical feasibility
+  - Resource availability
+
+- Priority of features may shift based on:
+  - User needs
+  - Development resources
+  - Technical dependencies
+  - Community contributions
+
+## Contributing 🤝
+
+We welcome contributions to any of these planned features! If you're interested in implementing something from the roadmap:
+
+1. Check if there's already an issue for the feature
+2. Create a new issue if none exists
+3. Discuss implementation approach
+4. Submit a pull request
+
+For feature requests not on the roadmap, please open an issue for discussion.
