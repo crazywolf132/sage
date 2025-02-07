@@ -60,56 +60,64 @@ func GetHistory(g git.Service, branch string, limit int, showStats, showAll bool
 }
 
 func parseGitLog(log string, stats bool) []CommitInfo {
-	lines := strings.Split(strings.TrimSpace(log), "\n")
-
 	var commits []CommitInfo
 	var current *CommitInfo
-	var collectingStats bool
 
-	for _, ln := range lines {
-		if strings.Contains(ln, "\x00") {
-			// new commit line
+	lines := strings.Split(strings.TrimSpace(log), "\n")
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		if strings.Contains(line, "\x00") {
+			// This is a commit line
 			if current != nil {
 				commits = append(commits, *current)
 			}
-			parts := strings.Split(ln, "\x00")
-			// parts: 0=sha, 1=author, 2=timestamp, 3=message
+
+			parts := strings.Split(line, "\x00")
 			if len(parts) < 4 {
 				continue
 			}
-			sha := parts[0]
-			author := parts[1]
-			tUnix, _ := strconv.ParseInt(parts[2], 10, 64)
-			msg := parts[3]
+
+			// Parse timestamp
+			timestamp, _ := strconv.ParseInt(parts[2], 10, 64)
+			date := time.Unix(timestamp, 0)
 
 			current = &CommitInfo{
-				Hash:       sha,
-				ShortHash:  sha[:7],
-				AuthorName: author,
-				Date:       time.Unix(tUnix, 0),
-				Message:    msg,
+				Hash:       parts[0],
+				ShortHash:  parts[0][:7],
+				AuthorName: parts[1],
+				Date:       date,
+				Message:    parts[3],
+				Stats:      CommitStats{},
 			}
-			collectingStats = stats
-		} else if collectingStats && ln != "" {
-			// expecting lines like "added deleted file"
-			fs := strings.Fields(ln)
-			if len(fs) >= 3 {
-				added, _ := strconv.Atoi(fs[0])
-				deleted, _ := strconv.Atoi(fs[1])
-				if added > 0 {
-					current.Stats.Added += added
-				}
-				if deleted > 0 {
-					current.Stats.Deleted += deleted
-				}
-				if added > 0 && deleted > 0 {
-					current.Stats.Modified++
+
+			// Look ahead for stats if requested
+			if stats && i+3 < len(lines) {
+				// Skip blank line
+				i++
+				// Next three lines should be stats
+				for j := 0; j < 3 && i+1 < len(lines); j++ {
+					statLine := lines[i+1]
+					if statLine == "" {
+						break
+					}
+					parts := strings.Fields(statLine)
+					if len(parts) >= 2 {
+						added, _ := strconv.Atoi(parts[0])
+						deleted, _ := strconv.Atoi(parts[1])
+						current.Stats.Added += added
+						current.Stats.Deleted += deleted
+						current.Stats.Modified++
+					}
+					i++
 				}
 			}
 		}
 	}
+
+	// Don't forget the last commit
 	if current != nil {
 		commits = append(commits, *current)
 	}
+
 	return commits
 }
