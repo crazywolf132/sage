@@ -10,15 +10,15 @@ import (
 	"github.com/crazywolf132/sage/internal/ui"
 )
 
-// CommitOptions defines the options for a commit.
+// CommitOptions defines our commit parameters.
 type CommitOptions struct {
 	Message         string
 	AllowEmpty      bool
 	PushAfterCommit bool
-	UseConventional bool // if true, use our conventional commit prompt
-	UseAI           bool // if true, generate commit message using AI if no message is provided
+	UseConventional bool // whether to prompt with a conventional commit format
+	UseAI           bool // if true, generate commit message via AI if none provided
 	ChangeType      string
-	StageAll        bool // (legacy; not used in our new logic)
+	StageAll        bool // legacy flag (not used in new logic)
 }
 
 // CommitResult contains the result of the commit.
@@ -27,7 +27,6 @@ type CommitResult struct {
 	Pushed        bool
 }
 
-// changeCommitType changes the conventional commit type.
 func changeCommitType(msg, newType string) string {
 	if !strings.Contains(msg, ": ") {
 		return fmt.Sprintf("%s: %s", newType, msg)
@@ -41,18 +40,17 @@ func changeCommitType(msg, newType string) string {
 	return fmt.Sprintf("%s: %s", newType, parts[1])
 }
 
-// Commit implements the simplified commit logic.
-// It stages everything except files under ".sage/" (unless those are already staged)
-// and then, if no commit message is provided, either generates one via AI (if UseAI is true)
-// or prompts the user.
+// Commit implements our simplified commit pipeline.
+// It automatically stages every file, then (if no message is provided)
+// uses AI (if enabled) to generate a commit message.
 func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
-	// 1. Ensure we’re in a Git repo.
+	// Verify we’re in a Git repository.
 	isRepo, err := g.IsRepo()
 	if err != nil || !isRepo {
 		return nil, fmt.Errorf("not a git repository")
 	}
 
-	// 2. Get the current status.
+	// Get the current status.
 	status, err := g.StatusPorcelain()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get status: %w", err)
@@ -61,10 +59,10 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 		return nil, fmt.Errorf("no changes to commit")
 	}
 
-	// 3. If no commit message was provided, generate one.
+	// If no commit message was provided...
 	if opts.Message == "" {
 		if opts.UseAI {
-			// Use AI to generate commit message.
+			// Use AI to generate a commit message.
 			diff, err := g.GetDiff()
 			if err != nil {
 				return nil, fmt.Errorf("failed to get diff: %w", err)
@@ -89,7 +87,7 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 			if choice == "Accept" {
 				opts.Message = aiMsg
 			} else {
-				// Fallback to manual prompt.
+				// Ask manually via conventional prompt.
 				msg, scope, ctype, err := ui.AskCommitMessage(opts.UseConventional)
 				if err != nil {
 					return nil, err
@@ -105,7 +103,7 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 				}
 			}
 		} else {
-			// Otherwise, ask the user for a commit message.
+			// Otherwise, ask the user interactively.
 			msg, scope, ctype, err := ui.AskCommitMessage(opts.UseConventional)
 			if err != nil {
 				return nil, err
@@ -122,30 +120,23 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 		}
 	}
 
-	// 4. If a commit type change is requested, update the message.
+	// If a commit type change is requested, update the message.
 	if opts.ChangeType != "" {
 		opts.Message = changeCommitType(opts.Message, opts.ChangeType)
 	}
 
-	// 5. Check whether any file under .sage/ is staged.
-	sageStaged, err := g.IsPathStaged(".sage/")
-	if err != nil {
+	// Stage everything (we no longer exclude .sage/).
+	if err := g.StageAll(); err != nil {
 		return nil, err
 	}
-	// If .sage/ is not staged, stage every file except those in ".sage/".
-	if !sageStaged {
-		if err := g.StageAllExcept([]string{".sage/"}); err != nil {
-			return nil, err
-		}
-	}
 
-	// 6. Create the commit.
+	// Create the commit.
 	if err := g.Commit(opts.Message, opts.AllowEmpty, opts.StageAll); err != nil {
 		return nil, fmt.Errorf("failed to commit: %w", err)
 	}
 	res := &CommitResult{ActualMessage: opts.Message}
 
-	// 7. Optionally push the commit.
+	// Optionally push the commit.
 	if opts.PushAfterCommit {
 		branch, err := g.CurrentBranch()
 		if err != nil {

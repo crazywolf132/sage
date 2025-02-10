@@ -2,12 +2,14 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 
 	"github.com/BurntSushi/toml"
 	"github.com/crazywolf132/sage/internal/git"
+	"github.com/crazywolf132/sage/internal/ui"
 )
 
 var (
@@ -160,8 +162,24 @@ func loadLocalConfig() error {
 	return nil
 }
 
+// KEYS WE DON'T WANT TO SAVE LOCALLY:
+var sensitiveKeys = []string{
+	"api.api_key",
+}
+
 func writeLocalConfig() error {
+	// Ensure the .sage folder exists.
 	os.MkdirAll(".sage", 0755)
+
+	// Remove sensitive keys before saving.
+	for _, naughtyKey := range sensitiveKeys {
+		// We will inform the user that we are not saving this key. Please add it to global config instead.
+		if _, ok := localData[naughtyKey]; ok {
+			delete(localData, naughtyKey)
+			fmt.Println(ui.Gray(fmt.Sprintf("Warning: not saving sensitive key %s in local config", naughtyKey)))
+		}
+	}
+
 	b, err := toml.Marshal(localData)
 	if err != nil {
 		return err

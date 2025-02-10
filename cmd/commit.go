@@ -10,36 +10,27 @@ import (
 )
 
 var (
-	commitMessage    string
-	commitEmpty      bool
-	commitPush       bool
-	commitAI         bool
-	commitAutoAccept bool
-	commitType       string
-	commitNewType    string
-	commitMultiple   bool
+	commitMessage      string
+	commitEmpty        bool
+	commitPush         bool
+	commitConventional bool
+	commitAI           bool
 )
 
 var commitCmd = &cobra.Command{
 	Use:   "commit [message]",
 	Short: "Stage and commit changes",
-	Long: `Stage and commit changes in one step. Without a message, prompts for one.
-	
+	Long: `Stage and commit changes in one step.
+
 Examples:
-  # Interactive commit message prompt
-  sage commit
+  # Interactive commit message prompt with AI support
+  sage commit --ai
 
   # Direct commit with message
   sage commit "feat: add user authentication"
 
-  # Use AI to generate commit message
-  sage commit --ai
-
-  # Multiple commits with AI grouping
-  sage commit --multiple --ai
-
-  # Auto-accept AI suggestions
-  sage commit --ai --yes`,
+  # Stage everything (including .sage/) and commit with push
+  sage commit -p "fix: resolve null pointer error"`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 0 {
@@ -48,28 +39,12 @@ Examples:
 
 		g := git.NewShellGit()
 
-		if commitMultiple {
-			if !commitAI {
-				return fmt.Errorf("--multiple requires --ai flag")
-			}
-			return app.CommitMultiple(g, app.CommitOptions{
-				Message:         commitMessage,
-				AllowEmpty:      commitEmpty,
-				PushAfterCommit: commitPush,
-				AutoAcceptAI:    commitAutoAccept,
-				SuggestType:     commitType,
-				ChangeType:      commitNewType,
-			})
-		}
-
 		res, err := app.Commit(g, app.CommitOptions{
 			Message:         commitMessage,
 			AllowEmpty:      commitEmpty,
 			PushAfterCommit: commitPush,
+			UseConventional: commitConventional,
 			UseAI:           commitAI,
-			AutoAcceptAI:    commitAutoAccept,
-			SuggestType:     commitType,
-			ChangeType:      commitNewType,
 		})
 		if err != nil {
 			return err
@@ -88,9 +63,6 @@ func init() {
 	rootCmd.AddCommand(commitCmd)
 	commitCmd.Flags().BoolVar(&commitEmpty, "empty", false, "Allow empty commits")
 	commitCmd.Flags().BoolVarP(&commitPush, "push", "p", false, "Push after commit")
+	commitCmd.Flags().BoolVarP(&commitConventional, "conventional", "c", false, "Use conventional commit format")
 	commitCmd.Flags().BoolVarP(&commitAI, "ai", "a", false, "Use AI to generate commit message")
-	commitCmd.Flags().BoolVarP(&commitMultiple, "multiple", "m", false, "Create multiple commits based on AI grouping (requires --ai)")
-	commitCmd.Flags().BoolVarP(&commitAutoAccept, "yes", "y", false, "Auto-accept AI suggestions")
-	commitCmd.Flags().StringVar(&commitType, "type", "", "Suggest this commit type to AI")
-	commitCmd.Flags().StringVar(&commitNewType, "change-type", "", "Change commit type without regenerating")
 }
