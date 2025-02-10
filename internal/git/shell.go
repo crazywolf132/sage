@@ -10,12 +10,16 @@ import (
 	"time"
 )
 
+// ShellGit implements the Service interface using shell commands to interact with Git
 type ShellGit struct{}
 
+// NewShellGit creates a new instance of ShellGit that implements the Service interface
 func NewShellGit() Service {
 	return &ShellGit{}
 }
 
+// run executes a git command with the given arguments and returns its output
+// It captures and returns any error messages through stderr
 func (s *ShellGit) run(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	var stderr bytes.Buffer
@@ -27,6 +31,8 @@ func (s *ShellGit) run(args ...string) (string, error) {
 	return string(out), nil
 }
 
+// runInteractive executes a git command in interactive mode, connecting it to the terminal's
+// standard input, output, and error streams
 func (s *ShellGit) runInteractive(args ...string) error {
 	cmd := exec.Command("git", args...)
 	cmd.Stdin = os.Stdin
@@ -35,6 +41,8 @@ func (s *ShellGit) runInteractive(args ...string) error {
 	return cmd.Run()
 }
 
+// IsRepo checks if the current directory is a git repository
+// Returns true if it is, false if not, and any error encountered
 func (s *ShellGit) IsRepo() (bool, error) {
 	_, err := s.run("rev-parse", "--git-dir")
 	if err != nil && strings.Contains(err.Error(), "not a git repository") {
@@ -43,11 +51,14 @@ func (s *ShellGit) IsRepo() (bool, error) {
 	return err == nil, nil
 }
 
+// CurrentBranch returns the name of the current git branch
 func (s *ShellGit) CurrentBranch() (string, error) {
 	out, err := s.run("rev-parse", "--abbrev-ref", "HEAD")
 	return strings.TrimSpace(out), err
 }
 
+// IsClean checks if the working directory is clean (no uncommitted changes)
+// Returns true if clean, false if there are changes
 func (s *ShellGit) IsClean() (bool, error) {
 	out, err := s.run("status", "--porcelain")
 	if err != nil {
@@ -56,11 +67,15 @@ func (s *ShellGit) IsClean() (bool, error) {
 	return strings.TrimSpace(out) == "", nil
 }
 
+// StageAll stages all changes in the working directory
 func (s *ShellGit) StageAll() error {
 	_, err := s.run("add", ".")
 	return err
 }
 
+// Commit creates a new commit with the given message
+// If allowEmpty is true, allows creating empty commits
+// If stageAll is true, automatically stages all changes before committing
 func (s *ShellGit) Commit(msg string, allowEmpty bool, stageAll bool) error {
 	args := []string{"commit"}
 	if stageAll {
@@ -74,6 +89,8 @@ func (s *ShellGit) Commit(msg string, allowEmpty bool, stageAll bool) error {
 	return err
 }
 
+// Push pushes the specified branch to the remote repository
+// If force is true, performs a force push
 func (s *ShellGit) Push(branch string, force bool) error {
 	args := []string{"push", "origin", branch}
 	if force {
@@ -83,6 +100,7 @@ func (s *ShellGit) Push(branch string, force bool) error {
 	return err
 }
 
+// DefaultBranch returns the name of the default branch (usually main or master)
 func (s *ShellGit) DefaultBranch() (string, error) {
 	out, err := s.run("symbolic-ref", "refs/remotes/origin/HEAD")
 	if err != nil {
@@ -96,6 +114,7 @@ func (s *ShellGit) DefaultBranch() (string, error) {
 	return parts[len(parts)-1], nil
 }
 
+// MergedBranches returns a list of branches that have been merged into the specified base branch
 func (s *ShellGit) MergedBranches(base string) ([]string, error) {
 	out, err := s.run("branch", "--merged", base)
 	if err != nil {
@@ -111,6 +130,8 @@ func (s *ShellGit) MergedBranches(base string) ([]string, error) {
 	return res, nil
 }
 
+// DeleteBranch deletes the specified branch
+// If the branch is not fully merged, attempts a force delete
 func (s *ShellGit) DeleteBranch(name string) error {
 	_, err := s.run("branch", "-d", name)
 	if err != nil && strings.Contains(err.Error(), "is not fully merged") {
@@ -123,41 +144,50 @@ func (s *ShellGit) DeleteBranch(name string) error {
 	return err
 }
 
+// FetchAll fetches all remotes and prunes deleted remote branches
 func (s *ShellGit) FetchAll() error {
 	_, err := s.run("fetch", "--all", "--prune")
 	return err
 }
 
+// Checkout switches to the specified branch or commit
 func (s *ShellGit) Checkout(name string) error {
 	_, err := s.run("checkout", name)
 	return err
 }
 
+// Pull performs a git pull in interactive mode
 func (s *ShellGit) Pull() error {
 	return s.runInteractive("pull")
 }
 
+// PullFF performs a fast-forward only pull
 func (s *ShellGit) PullFF() error {
 	return s.runInteractive("pull", "--ff-only")
 }
 
+// PullRebase performs a pull with rebase
 func (s *ShellGit) PullRebase() error {
 	return s.runInteractive("pull", "--rebase")
 }
 
+// CreateBranch creates a new branch with the specified name
 func (s *ShellGit) CreateBranch(name string) error {
 	_, err := s.run("branch", name)
 	return err
 }
 
+// Merge merges the specified base branch into the current branch
 func (s *ShellGit) Merge(base string) error {
 	return s.runInteractive("merge", base)
 }
 
+// MergeAbort aborts an in-progress merge
 func (s *ShellGit) MergeAbort() error {
 	return s.runInteractive("merge", "--abort")
 }
 
+// IsMerging checks if a merge is currently in progress
 func (s *ShellGit) IsMerging() (bool, error) {
 	_, err := s.run("rev-parse", "--verify", "MERGE_HEAD")
 	if err != nil && strings.Contains(err.Error(), "not a valid object name") {
@@ -166,10 +196,12 @@ func (s *ShellGit) IsMerging() (bool, error) {
 	return (err == nil), nil
 }
 
+// RebaseAbort aborts an in-progress rebase
 func (s *ShellGit) RebaseAbort() error {
 	return s.runInteractive("rebase", "--abort")
 }
 
+// IsRebasing checks if a rebase is currently in progress
 func (s *ShellGit) IsRebasing() (bool, error) {
 	_, err := s.run("rev-parse", "--verify", "REBASE_HEAD")
 	if err != nil && strings.Contains(err.Error(), "not a valid object name") {
@@ -178,15 +210,18 @@ func (s *ShellGit) IsRebasing() (bool, error) {
 	return (err == nil), nil
 }
 
+// StatusPorcelain returns the git status in porcelain format
 func (s *ShellGit) StatusPorcelain() (string, error) {
 	return s.run("status", "--porcelain")
 }
 
+// ResetSoft performs a soft reset to the specified reference
 func (s *ShellGit) ResetSoft(ref string) error {
 	_, err := s.run("reset", "--soft", ref)
 	return err
 }
 
+// ListBranches returns a list of all local branches
 func (s *ShellGit) ListBranches() ([]string, error) {
 	out, err := s.run("branch", "--list", "--format=%(refname:short)")
 	if err != nil {
@@ -196,6 +231,10 @@ func (s *ShellGit) ListBranches() ([]string, error) {
 	return lines, nil
 }
 
+// Log returns the git log with custom formatting
+// If branch is specified, shows log for that branch
+// If limit > 0, limits the number of entries (unless all is true)
+// If stats is true, includes numstat information
 func (s *ShellGit) Log(branch string, limit int, stats, all bool) (string, error) {
 	// Build the git log command with a custom format
 	args := []string{
@@ -223,6 +262,8 @@ func (s *ShellGit) Log(branch string, limit int, stats, all bool) (string, error
 	return out, nil
 }
 
+// GetDiff returns the current diff
+// First checks for staged changes, then unstaged if no staged changes exist
 func (s *ShellGit) GetDiff() (string, error) {
 	// First check if there are staged changes
 	stagedDiff, err := s.run("diff", "--cached")
@@ -244,10 +285,12 @@ func (s *ShellGit) GetDiff() (string, error) {
 	return unstagedDiff, nil
 }
 
+// SquashCommits performs an interactive rebase to squash commits from the specified start commit
 func (s *ShellGit) SquashCommits(startCommit string) error {
 	return s.runInteractive("rebase", "-i", startCommit)
 }
 
+// IsHeadBranch checks if the specified branch is the default branch
 func (s *ShellGit) IsHeadBranch(branch string) (bool, error) {
 	defaultBranch, err := s.DefaultBranch()
 	if err != nil {
@@ -256,6 +299,7 @@ func (s *ShellGit) IsHeadBranch(branch string) (bool, error) {
 	return branch == defaultBranch, nil
 }
 
+// GetFirstCommit returns the hash of the first commit in the repository
 func (s *ShellGit) GetFirstCommit() (string, error) {
 	out, err := s.run("rev-list", "--max-parents=0", "HEAD")
 	if err != nil {
@@ -264,11 +308,13 @@ func (s *ShellGit) GetFirstCommit() (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// RunInteractive runs a git command in interactive mode with the specified arguments
 func (g *ShellGit) RunInteractive(cmd string, args ...string) error {
 	cmdArgs := append([]string{cmd}, args...)
 	return g.runInteractive(cmdArgs...)
 }
 
+// IsPathStaged checks if the specified path is staged in git
 func (s *ShellGit) IsPathStaged(path string) (bool, error) {
 	// First check if the path exists in the working tree
 	out, err := s.run("ls-files", path)
@@ -285,6 +331,7 @@ func (s *ShellGit) IsPathStaged(path string) (bool, error) {
 	return strings.TrimSpace(out) != "", nil
 }
 
+// StageAllExcept stages all changes except those in the specified paths
 func (s *ShellGit) StageAllExcept(excludePaths []string) error {
 	// First, get all changes
 	out, err := s.run("status", "--porcelain")
@@ -332,6 +379,7 @@ func (s *ShellGit) StageAllExcept(excludePaths []string) error {
 	return nil
 }
 
+// GetBranchLastCommit returns the timestamp of the last commit on the specified branch
 func (s *ShellGit) GetBranchLastCommit(branch string) (time.Time, error) {
 	out, err := s.run("log", "-1", "--format=%at", branch)
 	if err != nil {
@@ -344,6 +392,7 @@ func (s *ShellGit) GetBranchLastCommit(branch string) (time.Time, error) {
 	return time.Unix(timestamp, 0), nil
 }
 
+// GetBranchCommitCount returns the total number of commits in the specified branch
 func (s *ShellGit) GetBranchCommitCount(branch string) (int, error) {
 	out, err := s.run("rev-list", "--count", branch)
 	if err != nil {
@@ -356,6 +405,8 @@ func (s *ShellGit) GetBranchCommitCount(branch string) (int, error) {
 	return count, nil
 }
 
+// GetBranchMergeConflicts returns the number of potential merge conflicts
+// between the specified branch and the default branch
 func (s *ShellGit) GetBranchMergeConflicts(branch string) (int, error) {
 	// Get merge base with default branch
 	defaultBranch, err := s.DefaultBranch()
@@ -378,6 +429,8 @@ func (s *ShellGit) GetBranchMergeConflicts(branch string) (int, error) {
 	return strings.Count(out, "<<<<<<<"), nil
 }
 
+// MergeContinue continues a merge operation after conflicts have been resolved
+// Returns an error if there are still unresolved conflicts
 func (s *ShellGit) MergeContinue() (string, error) {
 	out, err := s.run("merge", "--continue")
 	if err != nil {
@@ -390,6 +443,8 @@ func (s *ShellGit) MergeContinue() (string, error) {
 	return out, nil
 }
 
+// RebaseContinue continues a rebase operation after conflicts have been resolved
+// Returns an error if there are still unresolved conflicts
 func (s *ShellGit) RebaseContinue() (string, error) {
 	out, err := s.run("rebase", "--continue")
 	if err != nil {
