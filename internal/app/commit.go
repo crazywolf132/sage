@@ -83,14 +83,30 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 				var choice string
 				err = survey.AskOne(&survey.Select{
 					Message: "Choose an option:",
-					Options: []string{"Accept", "Enter manually"},
+					Options: []string{"Accept", "Change type", "Enter manually"},
 				}, &choice)
 				if err != nil {
 					return nil, err
 				}
-				if choice == "Accept" {
+
+				switch choice {
+				case "Accept":
 					opts.Message = aiMsg
-				} else {
+					break
+				case "Change type":
+					newType := ""
+					err = survey.AskOne(&survey.Select{
+						Message: "Select new commit type:",
+						Options: []string{
+							"feat", "fix", "docs", "style", "test", "ci", "refactor", "perf", "chore",
+						},
+					}, &newType)
+					if err != nil {
+						return nil, err
+					}
+					opts.Message = changeCommitType(aiMsg, newType)
+					break
+				case "Enter manually":
 					msg, scope, ctype, err := ui.AskCommitMessage(opts.UseConventional)
 					if err != nil {
 						return nil, err
