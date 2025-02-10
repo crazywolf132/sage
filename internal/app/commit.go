@@ -17,8 +17,8 @@ type CommitOptions struct {
 	PushAfterCommit bool
 	UseConventional bool // whether to prompt with a conventional commit format
 	UseAI           bool // if true, generate commit message via AI if none provided
+	AutoAccept      bool // if true, automatically accept AI-generated message without prompting
 	ChangeType      string
-	StageAll        bool // legacy flag (not used in new logic)
 }
 
 // CommitResult contains the result of the commit.
@@ -62,7 +62,6 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 	// If no commit message was provided...
 	if opts.Message == "" {
 		if opts.UseAI {
-			// Use AI to generate a commit message.
 			diff, err := g.GetDiff()
 			if err != nil {
 				return nil, fmt.Errorf("failed to get diff: %w", err)
@@ -76,34 +75,38 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 				return nil, fmt.Errorf("failed to generate AI commit message: %w", err)
 			}
 			fmt.Printf("Generated commit message: %q\n", aiMsg)
-			var choice string
-			err = survey.AskOne(&survey.Select{
-				Message: "Choose an option:",
-				Options: []string{"Accept", "Enter manually"},
-			}, &choice)
-			if err != nil {
-				return nil, err
-			}
-			if choice == "Accept" {
+			if opts.AutoAccept {
+				// Automatically accept the AI message
 				opts.Message = aiMsg
 			} else {
-				// Ask manually via conventional prompt.
-				msg, scope, ctype, err := ui.AskCommitMessage(opts.UseConventional)
+				// Otherwise, prompt the user.
+				var choice string
+				err = survey.AskOne(&survey.Select{
+					Message: "Choose an option:",
+					Options: []string{"Accept", "Enter manually"},
+				}, &choice)
 				if err != nil {
 					return nil, err
 				}
-				if opts.UseConventional {
-					if scope != "" {
-						opts.Message = fmt.Sprintf("%s(%s): %s", ctype, scope, msg)
-					} else {
-						opts.Message = fmt.Sprintf("%s: %s", ctype, msg)
-					}
+				if choice == "Accept" {
+					opts.Message = aiMsg
 				} else {
-					opts.Message = msg
+					msg, scope, ctype, err := ui.AskCommitMessage(opts.UseConventional)
+					if err != nil {
+						return nil, err
+					}
+					if opts.UseConventional {
+						if scope != "" {
+							opts.Message = fmt.Sprintf("%s(%s): %s", ctype, scope, msg)
+						} else {
+							opts.Message = fmt.Sprintf("%s: %s", ctype, msg)
+						}
+					} else {
+						opts.Message = msg
+					}
 				}
 			}
 		} else {
-			// Otherwise, ask the user interactively.
 			msg, scope, ctype, err := ui.AskCommitMessage(opts.UseConventional)
 			if err != nil {
 				return nil, err
@@ -131,7 +134,7 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 	}
 
 	// Create the commit.
-	if err := g.Commit(opts.Message, opts.AllowEmpty, opts.StageAll); err != nil {
+	if err := g.Commit(opts.Message, opts.AllowEmpty, true); err != nil {
 		return nil, fmt.Errorf("failed to commit: %w", err)
 	}
 	res := &CommitResult{ActualMessage: opts.Message}

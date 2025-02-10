@@ -102,6 +102,11 @@ func AskCommitMessage(useConventional bool) (msg string, scope string, ctype str
 	return form.Msg, form.Scope, form.Type, err
 }
 
+// Info prints an informational message in the "sage" color.
+func Info(msg string) {
+	fmt.Println(Sage(msg))
+}
+
 func nonEmpty(val interface{}) error {
 	str, _ := val.(string)
 	if str == "" {

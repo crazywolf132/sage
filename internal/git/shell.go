@@ -10,13 +10,13 @@ import (
 	"time"
 )
 
-type shellGit struct{}
+type ShellGit struct{}
 
 func NewShellGit() Service {
-	return &shellGit{}
+	return &ShellGit{}
 }
 
-func (s *shellGit) run(args ...string) (string, error) {
+func (s *ShellGit) run(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -27,7 +27,7 @@ func (s *shellGit) run(args ...string) (string, error) {
 	return string(out), nil
 }
 
-func (s *shellGit) runInteractive(args ...string) error {
+func (s *ShellGit) runInteractive(args ...string) error {
 	cmd := exec.Command("git", args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -35,7 +35,7 @@ func (s *shellGit) runInteractive(args ...string) error {
 	return cmd.Run()
 }
 
-func (s *shellGit) IsRepo() (bool, error) {
+func (s *ShellGit) IsRepo() (bool, error) {
 	_, err := s.run("rev-parse", "--git-dir")
 	if err != nil && strings.Contains(err.Error(), "not a git repository") {
 		return false, nil
@@ -43,12 +43,12 @@ func (s *shellGit) IsRepo() (bool, error) {
 	return err == nil, nil
 }
 
-func (s *shellGit) CurrentBranch() (string, error) {
+func (s *ShellGit) CurrentBranch() (string, error) {
 	out, err := s.run("rev-parse", "--abbrev-ref", "HEAD")
 	return strings.TrimSpace(out), err
 }
 
-func (s *shellGit) IsClean() (bool, error) {
+func (s *ShellGit) IsClean() (bool, error) {
 	out, err := s.run("status", "--porcelain")
 	if err != nil {
 		return false, err
@@ -56,12 +56,12 @@ func (s *shellGit) IsClean() (bool, error) {
 	return strings.TrimSpace(out) == "", nil
 }
 
-func (s *shellGit) StageAll() error {
+func (s *ShellGit) StageAll() error {
 	_, err := s.run("add", ".")
 	return err
 }
 
-func (s *shellGit) Commit(msg string, allowEmpty bool, stageAll bool) error {
+func (s *ShellGit) Commit(msg string, allowEmpty bool, stageAll bool) error {
 	args := []string{"commit"}
 	if stageAll {
 		args = append(args, "-a")
@@ -74,7 +74,7 @@ func (s *shellGit) Commit(msg string, allowEmpty bool, stageAll bool) error {
 	return err
 }
 
-func (s *shellGit) Push(branch string, force bool) error {
+func (s *ShellGit) Push(branch string, force bool) error {
 	args := []string{"push", "origin", branch}
 	if force {
 		args = []string{"push", "--force", "origin", branch}
@@ -83,7 +83,7 @@ func (s *shellGit) Push(branch string, force bool) error {
 	return err
 }
 
-func (s *shellGit) DefaultBranch() (string, error) {
+func (s *ShellGit) DefaultBranch() (string, error) {
 	out, err := s.run("symbolic-ref", "refs/remotes/origin/HEAD")
 	if err != nil {
 		return "", err
@@ -96,7 +96,7 @@ func (s *shellGit) DefaultBranch() (string, error) {
 	return parts[len(parts)-1], nil
 }
 
-func (s *shellGit) MergedBranches(base string) ([]string, error) {
+func (s *ShellGit) MergedBranches(base string) ([]string, error) {
 	out, err := s.run("branch", "--merged", base)
 	if err != nil {
 		return nil, err
@@ -111,7 +111,7 @@ func (s *shellGit) MergedBranches(base string) ([]string, error) {
 	return res, nil
 }
 
-func (s *shellGit) DeleteBranch(name string) error {
+func (s *ShellGit) DeleteBranch(name string) error {
 	_, err := s.run("branch", "-d", name)
 	if err != nil && strings.Contains(err.Error(), "is not fully merged") {
 		_, err2 := s.run("branch", "-D", name)
@@ -123,42 +123,42 @@ func (s *shellGit) DeleteBranch(name string) error {
 	return err
 }
 
-func (s *shellGit) FetchAll() error {
+func (s *ShellGit) FetchAll() error {
 	_, err := s.run("fetch", "--all", "--prune")
 	return err
 }
 
-func (s *shellGit) Checkout(name string) error {
+func (s *ShellGit) Checkout(name string) error {
 	_, err := s.run("checkout", name)
 	return err
 }
 
-func (s *shellGit) Pull() error {
+func (s *ShellGit) Pull() error {
 	return s.runInteractive("pull")
 }
 
-func (s *shellGit) PullFF() error {
+func (s *ShellGit) PullFF() error {
 	return s.runInteractive("pull", "--ff-only")
 }
 
-func (s *shellGit) PullRebase() error {
+func (s *ShellGit) PullRebase() error {
 	return s.runInteractive("pull", "--rebase")
 }
 
-func (s *shellGit) CreateBranch(name string) error {
+func (s *ShellGit) CreateBranch(name string) error {
 	_, err := s.run("branch", name)
 	return err
 }
 
-func (s *shellGit) Merge(base string) error {
+func (s *ShellGit) Merge(base string) error {
 	return s.runInteractive("merge", base)
 }
 
-func (s *shellGit) MergeAbort() error {
+func (s *ShellGit) MergeAbort() error {
 	return s.runInteractive("merge", "--abort")
 }
 
-func (s *shellGit) IsMerging() (bool, error) {
+func (s *ShellGit) IsMerging() (bool, error) {
 	_, err := s.run("rev-parse", "--verify", "MERGE_HEAD")
 	if err != nil && strings.Contains(err.Error(), "not a valid object name") {
 		return false, nil
@@ -166,11 +166,11 @@ func (s *shellGit) IsMerging() (bool, error) {
 	return (err == nil), nil
 }
 
-func (s *shellGit) RebaseAbort() error {
+func (s *ShellGit) RebaseAbort() error {
 	return s.runInteractive("rebase", "--abort")
 }
 
-func (s *shellGit) IsRebasing() (bool, error) {
+func (s *ShellGit) IsRebasing() (bool, error) {
 	_, err := s.run("rev-parse", "--verify", "REBASE_HEAD")
 	if err != nil && strings.Contains(err.Error(), "not a valid object name") {
 		return false, nil
@@ -178,16 +178,16 @@ func (s *shellGit) IsRebasing() (bool, error) {
 	return (err == nil), nil
 }
 
-func (s *shellGit) StatusPorcelain() (string, error) {
+func (s *ShellGit) StatusPorcelain() (string, error) {
 	return s.run("status", "--porcelain")
 }
 
-func (s *shellGit) ResetSoft(ref string) error {
+func (s *ShellGit) ResetSoft(ref string) error {
 	_, err := s.run("reset", "--soft", ref)
 	return err
 }
 
-func (s *shellGit) ListBranches() ([]string, error) {
+func (s *ShellGit) ListBranches() ([]string, error) {
 	out, err := s.run("branch", "--list", "--format=%(refname:short)")
 	if err != nil {
 		return nil, err
@@ -196,7 +196,7 @@ func (s *shellGit) ListBranches() ([]string, error) {
 	return lines, nil
 }
 
-func (s *shellGit) Log(branch string, limit int, stats, all bool) (string, error) {
+func (s *ShellGit) Log(branch string, limit int, stats, all bool) (string, error) {
 	// Build the git log command with a custom format
 	args := []string{
 		"log",
@@ -223,7 +223,7 @@ func (s *shellGit) Log(branch string, limit int, stats, all bool) (string, error
 	return out, nil
 }
 
-func (s *shellGit) GetDiff() (string, error) {
+func (s *ShellGit) GetDiff() (string, error) {
 	// First check if there are staged changes
 	stagedDiff, err := s.run("diff", "--cached")
 	if err != nil {
@@ -244,11 +244,11 @@ func (s *shellGit) GetDiff() (string, error) {
 	return unstagedDiff, nil
 }
 
-func (s *shellGit) SquashCommits(startCommit string) error {
+func (s *ShellGit) SquashCommits(startCommit string) error {
 	return s.runInteractive("rebase", "-i", startCommit)
 }
 
-func (s *shellGit) IsHeadBranch(branch string) (bool, error) {
+func (s *ShellGit) IsHeadBranch(branch string) (bool, error) {
 	defaultBranch, err := s.DefaultBranch()
 	if err != nil {
 		return false, err
@@ -256,7 +256,7 @@ func (s *shellGit) IsHeadBranch(branch string) (bool, error) {
 	return branch == defaultBranch, nil
 }
 
-func (s *shellGit) GetFirstCommit() (string, error) {
+func (s *ShellGit) GetFirstCommit() (string, error) {
 	out, err := s.run("rev-list", "--max-parents=0", "HEAD")
 	if err != nil {
 		return "", fmt.Errorf("failed to get first commit: %w", err)
@@ -264,12 +264,12 @@ func (s *shellGit) GetFirstCommit() (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
-func (g *shellGit) RunInteractive(cmd string, args ...string) error {
+func (g *ShellGit) RunInteractive(cmd string, args ...string) error {
 	cmdArgs := append([]string{cmd}, args...)
 	return g.runInteractive(cmdArgs...)
 }
 
-func (s *shellGit) IsPathStaged(path string) (bool, error) {
+func (s *ShellGit) IsPathStaged(path string) (bool, error) {
 	// First check if the path exists in the working tree
 	out, err := s.run("ls-files", path)
 	if err != nil {
@@ -285,7 +285,7 @@ func (s *shellGit) IsPathStaged(path string) (bool, error) {
 	return strings.TrimSpace(out) != "", nil
 }
 
-func (s *shellGit) StageAllExcept(excludePaths []string) error {
+func (s *ShellGit) StageAllExcept(excludePaths []string) error {
 	// First, get all changes
 	out, err := s.run("status", "--porcelain")
 	if err != nil {
@@ -332,7 +332,7 @@ func (s *shellGit) StageAllExcept(excludePaths []string) error {
 	return nil
 }
 
-func (s *shellGit) GetBranchLastCommit(branch string) (time.Time, error) {
+func (s *ShellGit) GetBranchLastCommit(branch string) (time.Time, error) {
 	out, err := s.run("log", "-1", "--format=%at", branch)
 	if err != nil {
 		return time.Time{}, err
@@ -344,7 +344,7 @@ func (s *shellGit) GetBranchLastCommit(branch string) (time.Time, error) {
 	return time.Unix(timestamp, 0), nil
 }
 
-func (s *shellGit) GetBranchCommitCount(branch string) (int, error) {
+func (s *ShellGit) GetBranchCommitCount(branch string) (int, error) {
 	out, err := s.run("rev-list", "--count", branch)
 	if err != nil {
 		return 0, err
@@ -356,7 +356,7 @@ func (s *shellGit) GetBranchCommitCount(branch string) (int, error) {
 	return count, nil
 }
 
-func (s *shellGit) GetBranchMergeConflicts(branch string) (int, error) {
+func (s *ShellGit) GetBranchMergeConflicts(branch string) (int, error) {
 	// Get merge base with default branch
 	defaultBranch, err := s.DefaultBranch()
 	if err != nil {
@@ -376,4 +376,37 @@ func (s *shellGit) GetBranchMergeConflicts(branch string) (int, error) {
 
 	// Count conflict markers
 	return strings.Count(out, "<<<<<<<"), nil
+}
+
+func (s *ShellGit) MergeContinue() (string, error) {
+	out, err := s.run("merge", "--continue")
+	if err != nil {
+		// if error message indicates conflicts, inform the user.
+		if strings.Contains(err.Error(), "conflict") {
+			return "", fmt.Errorf("merge conflicts encountered; please resolve conflicts and run 'sage sync --continue'")
+		}
+		return "", fmt.Errorf("failed to continue merge: %w", err)
+	}
+	return out, nil
+}
+
+func (s *ShellGit) RebaseContinue() (string, error) {
+	out, err := s.run("rebase", "--continue")
+	if err != nil {
+		if strings.Contains(err.Error(), "confict") {
+			return "", fmt.Errorf("rebase conflicts encountered; please resolve conflicts and run 'sage sync --continue'")
+		}
+		return "", fmt.Errorf("failed to continue rebase: %w", err)
+	}
+	return out, nil
+}
+
+// ListConflictedFiles returns a string listing files with unresolved conflicts.
+// It runs: git diff --name-only --diff-filter=U
+func (s *ShellGit) ListConflictedFiles() (string, error) {
+	out, err := s.run("diff", "--name-only", "--diff-filter=U")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
 }
