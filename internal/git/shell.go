@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type shellGit struct{}
@@ -60,8 +61,12 @@ func (s *shellGit) StageAll() error {
 	return err
 }
 
-func (s *shellGit) Commit(msg string, allowEmpty bool) error {
-	args := []string{"commit", "-m", msg}
+func (s *shellGit) Commit(msg string, allowEmpty bool, stageAll bool) error {
+	args := []string{"commit"}
+	if stageAll {
+		args = append(args, "-a")
+	}
+	args = append(args, "-m", msg)
 	if allowEmpty {
 		args = append(args, "--allow-empty")
 	}
@@ -325,4 +330,50 @@ func (s *shellGit) StageAllExcept(excludePaths []string) error {
 		}
 	}
 	return nil
+}
+
+func (s *shellGit) GetBranchLastCommit(branch string) (time.Time, error) {
+	out, err := s.run("log", "-1", "--format=%at", branch)
+	if err != nil {
+		return time.Time{}, err
+	}
+	timestamp, err := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Unix(timestamp, 0), nil
+}
+
+func (s *shellGit) GetBranchCommitCount(branch string) (int, error) {
+	out, err := s.run("rev-list", "--count", branch)
+	if err != nil {
+		return 0, err
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (s *shellGit) GetBranchMergeConflicts(branch string) (int, error) {
+	// Get merge base with default branch
+	defaultBranch, err := s.DefaultBranch()
+	if err != nil {
+		return 0, err
+	}
+
+	base, err := s.run("merge-base", defaultBranch, branch)
+	if err != nil {
+		return 0, err
+	}
+
+	// Try a merge and count conflicts
+	out, err := s.run("merge-tree", strings.TrimSpace(base), defaultBranch, branch)
+	if err != nil {
+		return 0, err
+	}
+
+	// Count conflict markers
+	return strings.Count(out, "<<<<<<<"), nil
 }

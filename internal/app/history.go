@@ -20,6 +20,7 @@ type CommitStats struct {
 	Added    int
 	Deleted  int
 	Modified int
+	Files    map[string]int // Maps file paths to number of changes
 }
 
 type CommitInfo struct {
@@ -87,26 +88,30 @@ func parseGitLog(log string, stats bool) []CommitInfo {
 				AuthorName: parts[1],
 				Date:       date,
 				Message:    parts[3],
-				Stats:      CommitStats{},
+				Stats: CommitStats{
+					Files: make(map[string]int),
+				},
 			}
 
 			// Look ahead for stats if requested
 			if stats && i+3 < len(lines) {
 				// Skip blank line
 				i++
-				// Next three lines should be stats
-				for j := 0; j < 3 && i+1 < len(lines); j++ {
+				// Next lines should be stats until we hit a blank line or another commit
+				for i+1 < len(lines) {
 					statLine := lines[i+1]
-					if statLine == "" {
+					if statLine == "" || strings.Contains(statLine, "\x00") {
 						break
 					}
 					parts := strings.Fields(statLine)
-					if len(parts) >= 2 {
+					if len(parts) >= 3 {
 						added, _ := strconv.Atoi(parts[0])
 						deleted, _ := strconv.Atoi(parts[1])
+						file := parts[2]
 						current.Stats.Added += added
 						current.Stats.Deleted += deleted
 						current.Stats.Modified++
+						current.Stats.Files[file] = added + deleted
 					}
 					i++
 				}

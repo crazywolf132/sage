@@ -1,12 +1,16 @@
 package git
 
+import (
+	"time"
+)
+
 type Service interface {
 	IsRepo() (bool, error)
 	IsClean() (bool, error)
 	StageAll() error
 	StageAllExcept(excludePaths []string) error
 	IsPathStaged(path string) (bool, error)
-	Commit(msg string, allowEmpty bool) error
+	Commit(msg string, allowEmpty bool, stageAll bool) error
 	CurrentBranch() (string, error)
 	Push(branch string, force bool) error
 	GetDiff() (string, error)
@@ -32,4 +36,7 @@ type Service interface {
 	IsHeadBranch(branch string) (bool, error)
 	GetFirstCommit() (string, error)
 	RunInteractive(cmd string, args ...string) error
+	GetBranchLastCommit(branch string) (time.Time, error)
+	GetBranchCommitCount(branch string) (int, error)
+	GetBranchMergeConflicts(branch string) (int, error)
 }

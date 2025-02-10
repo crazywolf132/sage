@@ -61,7 +61,7 @@ func SyncBranch(g git.Service, abort, cont bool) error {
 		// After successful continue, create conventional commit and push
 		if merging {
 			msg := fmt.Sprintf("merge(%s): sync with %s", cur, db)
-			if err := g.Commit(msg, false); err != nil {
+			if err := g.Commit(msg, false, false); err != nil {
 				return fmt.Errorf("failed to create merge commit: %w", err)
 			}
 		}

@@ -5,6 +5,13 @@ default:
 version := "0.0.0-dev-" + `date "+%H.%M.%d.%m.%Y"`
 ldflags := "-X 'github.com/crazywolf132/sage/cmd.Version=" + version + "'"
 
+# Install Sage to your system
+install: build-dev
+    @echo "Installing Sage..."
+    @mkdir -p $(go env GOPATH)/bin
+    @cp bin/sage $(go env GOPATH)/bin/sage
+    @echo "✨ Sage installed successfully! Run 'sage --help' to get started."
+
 # Build the project (release build)
 build:
     go build -o bin/sage .
@@ -17,7 +24,7 @@ build-dev:
 
 # Run all tests
 test:
-    do go test ./...
+    go test ./...
 
 # Run tests with coverage
 test-coverage:
