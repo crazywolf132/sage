@@ -1,3 +1,4 @@
+// Package app provides the core application logic for the sage git helper tool
 package app
 
 import (
@@ -10,33 +11,50 @@ import (
 	"github.com/crazywolf132/sage/internal/ui"
 )
 
-// CommitOptions defines our commit parameters.
+// CommitOptions defines the parameters for creating a git commit.
+// It provides configuration for AI-assisted commit messages, conventional commits,
+// and post-commit actions like pushing.
 type CommitOptions struct {
-	Message         string
-	AllowEmpty      bool
+	// Message is the commit message to use. If empty, will prompt or use AI
+	Message string
+	// AllowEmpty enables creating commits with no changes
+	AllowEmpty bool
+	// PushAfterCommit determines if the commit should be pushed immediately
 	PushAfterCommit bool
-	UseConventional bool // whether to prompt with a conventional commit format
-	UseAI           bool // if true, generate commit message via AI if none provided
-	AutoAccept      bool // if true, automatically accept AI-generated message without prompting
-	ChangeType      string
+	// UseConventional enables conventional commit format (type: message)
+	UseConventional bool
+	// UseAI enables AI-generated commit messages when no message is provided
+	UseAI bool
+	// AutoAccept skips the confirmation prompt for AI-generated messages
+	AutoAccept bool
+	// ChangeType allows overriding the commit type (feat, fix, etc)
+	ChangeType string
 }
 
-// CommitResult contains the result of the commit.
+// CommitResult contains the outcome of a commit operation.
 type CommitResult struct {
+	// ActualMessage is the final commit message used
 	ActualMessage string
-	Pushed        bool
+	// Pushed indicates if the commit was pushed to remote
+	Pushed bool
 }
 
+// changeCommitType modifies a commit message to use a different conventional commit type.
+// It handles both simple messages and those with scopes - e.g., feat(scope): message.
 func changeCommitType(msg, newType string) string {
+	// If message doesn't follow conventional format, prepend the type
 	if !strings.Contains(msg, ": ") {
 		return fmt.Sprintf("%s: %s", newType, msg)
 	}
+	// Split into type and message parts
 	parts := strings.SplitN(msg, ": ", 2)
+	// Handle messages with scope - e.g., feat(api): message
 	if strings.Contains(parts[0], "(") {
 		typeParts := strings.SplitN(parts[0], "(", 2)
 		scope := "(" + typeParts[1] // includes the closing parenthesis
 		return fmt.Sprintf("%s%s: %s", newType, scope, parts[1])
 	}
+	// Handle messages without scope
 	return fmt.Sprintf("%s: %s", newType, parts[1])
 }
 
@@ -149,23 +167,28 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 		return nil, err
 	}
 
-	// Create the commit.
+	// Create the commit with the final message and options
 	if err := g.Commit(opts.Message, opts.AllowEmpty, true); err != nil {
 		return nil, fmt.Errorf("failed to commit: %w", err)
 	}
+	// Create result object with the actual message used
 	res := &CommitResult{ActualMessage: opts.Message}
 
-	// Optionally push the commit.
+	// Push the commit to remote if requested
 	if opts.PushAfterCommit {
+		// Get current branch name for pushing
 		branch, err := g.CurrentBranch()
 		if err != nil {
 			return nil, err
 		}
+		// Push changes to remote repository
 		if err := g.Push(branch, false); err != nil {
 			return nil, err
 		}
+		// Mark the result as pushed
 		res.Pushed = true
 	}
 
+	// Return the commit result with message and push status
 	return res, nil
 }
