@@ -16,7 +16,7 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X github.com/crazywolf132/sage/cmd.Version={{.Version}}
+      - -X github.com/crazywolf132/sage/internal/version.Version={{.Version}}
     mod_timestamp: '{{ .CommitTimestamp }}'
     flags:
       - -trimpath

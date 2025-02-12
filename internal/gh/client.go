@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -14,6 +15,86 @@ import (
 )
 
 const baseURL = "https://api.github.com"
+
+// pullRequestAPI is a minimal data holder for GH API calls
+type pullRequestAPI struct {
+	token  string
+	client *http.Client
+	owner  string
+	repo   string
+}
+
+// PullRequest is the domain object representing a PR
+type PullRequest struct {
+	Number  int    `json:"number"`
+	Title   string `json:"title"`
+	Body    string `json:"body"`
+	State   string `json:"state"`
+	HTMLURL string `json:"html_url"`
+	Draft   bool   `json:"draft"`
+	Merged  bool   `json:"merged"`
+	Head    struct {
+		Ref string `json:"ref"`
+	} `json:"head"`
+	Base struct {
+		Ref string `json:"ref"`
+	} `json:"base"`
+	Reviews  []Review        `json:"reviews"`
+	Checks   []Check         `json:"checks"`
+	Timeline []TimelineEvent `json:"timeline"`
+}
+
+type Review struct {
+	State string `json:"state"`
+	User  struct {
+		Login string `json:"login"`
+	} `json:"user"`
+}
+
+type Check struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
+type TimelineEvent struct {
+	Event     string    `json:"event"`
+	CreatedAt time.Time `json:"created_at"`
+	Message   string    `json:"message"`
+	SHA       string    `json:"sha"`
+	Actor     struct {
+		Login string `json:"login"`
+	} `json:"actor"`
+}
+
+// UnresolvedThread is a minimal structure for unresolved PR comment threads
+type UnresolvedThread struct {
+	Path     string
+	Line     int
+	Comments []Comment
+}
+
+// Comment is a snippet representing a single comment in a thread
+type Comment struct {
+	User string
+	Body string
+}
+
+// Client interface defines methods for interacting with GitHub
+type Client interface {
+	CreatePR(title, body, head, base string, draft bool) (*PullRequest, error)
+	ListPRs(state string) ([]PullRequest, error)
+	MergePR(num int, method string) error
+	ClosePR(num int) error
+	GetPRDetails(num int) (*PullRequest, error)
+	CheckoutPR(num int) (string, error)
+	ListPRUnresolvedThreads(prNum int) ([]UnresolvedThread, error)
+	GetPRTemplate() (string, error)
+	AddLabels(prNumber int, labels []string) error
+	RequestReviewers(prNumber int, reviewers []string) error
+	GetPRForBranch(branchName string) (*PullRequest, error)
+	GetLatestRelease() (string, error)
+	UpdatePR(num int, pr *PullRequest) error
+}
 
 func (p *pullRequestAPI) do(method, url string, body any) ([]byte, error) {
 	var buf io.Reader
@@ -439,4 +520,119 @@ func (p *pullRequestAPI) GetPRForBranch(branchName string) (*PullRequest, error)
 		return nil, nil
 	}
 	return &prs[0], nil
+}
+
+// GetLatestRelease returns the latest release version from GitHub
+func (p *pullRequestAPI) GetLatestRelease() (string, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/releases/latest", baseURL, p.owner, p.repo)
+	data, err := p.do("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+
+	var release struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.Unmarshal(data, &release); err != nil {
+		return "", err
+	}
+
+	// Remove 'v' prefix if present
+	version := strings.TrimPrefix(release.TagName, "v")
+	return version, nil
+}
+
+// NewClient creates a new GitHub client
+func NewClient() Client {
+	// Get owner and repo from git remote
+	owner, repo := getOwnerAndRepo()
+	token := getToken()
+
+	return &pullRequestAPI{
+		owner:  owner,
+		repo:   repo,
+		token:  token,
+		client: &http.Client{},
+	}
+}
+
+// getToken returns the GitHub token from environment variables
+func getToken() string {
+	token := os.Getenv("SAGE_GITHUB_TOKEN")
+	if token == "" {
+		token = os.Getenv("GITHUB_TOKEN")
+	}
+	return token
+}
+
+// getOwnerAndRepo extracts the owner and repo from the git remote URL
+func getOwnerAndRepo() (string, string) {
+	cmd := exec.Command("git", "remote", "get-url", "origin")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", ""
+	}
+
+	url := strings.TrimSpace(string(out))
+	url = strings.TrimSuffix(url, ".git")
+
+	// Handle SSH URLs
+	if strings.HasPrefix(url, "git@") {
+		parts := strings.Split(strings.TrimPrefix(url, "git@github.com:"), "/")
+		if len(parts) >= 2 {
+			return parts[0], parts[1]
+		}
+		return "", ""
+	}
+
+	// Handle HTTPS URLs
+	if strings.HasPrefix(url, "https://") {
+		parts := strings.Split(strings.TrimPrefix(url, "https://github.com/"), "/")
+		if len(parts) >= 2 {
+			return parts[0], parts[1]
+		}
+	}
+
+	return "", ""
+}
+
+// UpdatePR updates the specified pull request with new details
+func (p *pullRequestAPI) UpdatePR(num int, pr *PullRequest) error {
+	// Build the update request
+	data := map[string]interface{}{
+		"title": pr.Title,
+		"body":  pr.Body,
+		"draft": pr.Draft,
+	}
+
+	// Make the PATCH request to update the PR
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/pulls/%d", p.owner, p.repo, num)
+	req, err := http.NewRequest("PATCH", url, strings.NewReader(jsonEncode(data)))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+p.token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to update PR: %s", resp.Status)
+	}
+
+	return nil
+}
+
+func jsonEncode(v interface{}) string {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
 }

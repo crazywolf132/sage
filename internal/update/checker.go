@@ -3,99 +3,120 @@ package update
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
+	"github.com/crazywolf132/sage/internal/gh"
 	"github.com/crazywolf132/sage/internal/ui"
+	"github.com/hashicorp/go-version"
 )
 
-const lastCommitURL = "https://api.github.com/repos/sage/commits/main"
-
-type commitResp struct {
-	SHA string `json:"sha"`
+type checkState struct {
+	LastCheck time.Time `json:"last_check"`
+	Version   string    `json:"version"`
 }
 
-func CheckForUpdates() error {
-	checkFile, err := updateCheckPath()
-	if err != nil {
+// CheckForUpdates checks if a newer version of sage is available
+func CheckForUpdates(ghc gh.Client, currentVersion string) error {
+	// Skip check for dev versions
+	if currentVersion == "dev" || currentVersion == "" {
 		return nil
 	}
-	should, oldSHA := shouldCheck(checkFile)
-	if !should {
+
+	// Get config file path
+	configPath, err := getConfigPath()
+	if err != nil {
+		return nil // Silently fail if we can't get config path
+	}
+
+	// Check if we need to perform an update check
+	if !shouldCheck(configPath) {
 		return nil
 	}
-	newSHA, err := getLatestSHA()
+
+	// Get current version
+	current, err := version.NewVersion(strings.TrimPrefix(currentVersion, "v"))
 	if err != nil {
-		return nil // ignore
+		return nil // Silently fail for dev versions
 	}
-	_ = writeCheck(checkFile, newSHA)
-	if oldSHA != "" && newSHA != oldSHA {
-		ui.Warnf("A new version of Sage may be available!\n")
+
+	// Get latest version from GitHub
+	latestVersion, err := ghc.GetLatestRelease()
+	if err != nil {
+		return nil // Silently fail if we can't reach GitHub
 	}
+
+	// Parse latest version
+	latest, err := version.NewVersion(latestVersion)
+	if err != nil {
+		return nil // Silently fail for invalid versions
+	}
+
+	// Save check state
+	_ = saveCheckState(configPath, latestVersion)
+
+	// Compare versions
+	if latest.GreaterThan(current) {
+		ui.Info(fmt.Sprintf("A new version of sage is available: %s → %s", current, latest))
+		ui.Info("To update, run: go install github.com/crazywolf132/sage@latest")
+		fmt.Println() // Add a blank line for better readability
+	}
+
 	return nil
 }
 
-func updateCheckPath() (string, error) {
+func getConfigPath() (string, error) {
+	var configDir string
 	if runtime.GOOS == "windows" {
-		appdata := os.Getenv("LOCALAPPDATA")
-		if appdata == "" {
-			return "", fmt.Errorf("no LOCALAPPDATA")
+		configDir = os.Getenv("APPDATA")
+		if configDir == "" {
+			return "", fmt.Errorf("APPDATA environment variable not set")
 		}
-		return filepath.Join(appdata, "sage_update.json"), nil
+		configDir = filepath.Join(configDir, "sage")
+	} else {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		configDir = filepath.Join(homeDir, ".config", "sage")
 	}
-	return "/tmp/sage_update.json", nil
-}
 
-func shouldCheck(path string) (bool, string) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return true, ""
-	}
-	var st struct {
-		LastCheck time.Time
-		SHA       string
-	}
-	if err := json.Unmarshal(b, &st); err != nil {
-		return true, ""
-	}
-	if time.Since(st.LastCheck) < 24*time.Hour {
-		return false, st.SHA
-	}
-	return true, st.SHA
-}
-
-func getLatestSHA() (string, error) {
-	resp, err := http.Get(lastCommitURL)
-	if err != nil {
+	// Create config directory if it doesn't exist
+	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("status %d", resp.StatusCode)
-	}
-	d, _ := io.ReadAll(resp.Body)
-	var c commitResp
-	if err := json.Unmarshal(d, &c); err != nil {
-		return "", err
-	}
-	return c.SHA, nil
+
+	return filepath.Join(configDir, "update_check.json"), nil
 }
 
-func writeCheck(path, sha string) error {
-	st := struct {
-		LastCheck time.Time
-		SHA       string
-	}{
+func shouldCheck(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return true // Check if we can't read the file
+	}
+
+	var state checkState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return true // Check if we can't parse the file
+	}
+
+	// Check if 24 hours have passed since last check
+	return time.Since(state.LastCheck) >= 24*time.Hour
+}
+
+func saveCheckState(path string, version string) error {
+	state := checkState{
 		LastCheck: time.Now(),
-		SHA:       sha,
+		Version:   version,
 	}
-	b, err := json.Marshal(st)
+
+	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0644)
+
+	return os.WriteFile(path, data, 0644)
 }

@@ -1,12 +1,10 @@
-package cmd
+package version
 
 import (
 	"fmt"
 	"runtime/debug"
 	"strings"
 	"sync"
-
-	"github.com/spf13/cobra"
 )
 
 // Version string is set during build via ldflags
@@ -17,8 +15,8 @@ var (
 	versionString string
 )
 
-// GetVersion returns the version string, determining it on first call
-func GetVersion() string {
+// Get returns the version string, determining it on first call
+func Get() string {
 	once.Do(func() {
 		versionString = determineVersion()
 	})
@@ -55,28 +53,4 @@ func determineVersion() string {
 	}
 
 	return "0.0.0-dev"
-}
-
-var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Print the version number of sage",
-	Run: func(cmd *cobra.Command, args []string) {
-		short, _ := cmd.Flags().GetBool("short")
-		if short {
-			fmt.Println(GetVersion())
-		} else {
-			fmt.Println("sage version:", GetVersion())
-		}
-	},
-}
-
-func init() {
-	// Add a flag for short version output
-	versionCmd.Flags().BoolP("short", "s", false, "Display only the version number")
-
-	// Register the version command under the root command
-	rootCmd.AddCommand(versionCmd)
-
-	// Set the version for the root command so that -v/--version flags work automatically
-	rootCmd.Version = GetVersion()
 }

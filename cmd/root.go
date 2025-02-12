@@ -2,27 +2,28 @@ package cmd
 
 import (
 	"github.com/crazywolf132/sage/internal/config"
+	"github.com/crazywolf132/sage/internal/gh"
 	"github.com/crazywolf132/sage/internal/ui"
 	"github.com/crazywolf132/sage/internal/update"
+	"github.com/crazywolf132/sage/internal/version"
 	"github.com/spf13/cobra"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "sage",
-	Short: "A slim, powerful Git helper CLI",
-	Long: `Sage 2.0 streamlines Git workflows with minimal overhead.
-Use subcommands like commit, clean, pr, etc.`,
+	Use:           "sage",
+	Short:         "A CLI tool for managing git repositories",
+	Version:       version.Get(),
 	SilenceUsage:  true,
 	SilenceErrors: true,
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Load config (global + local) once
 		if err := config.LoadAllConfigs(); err != nil {
 			ui.Warnf("Failed to load config: %v\n", err)
 		}
 
-		// (Optional) auto-update check, ignore errors
-		_ = update.CheckForUpdates()
-		return nil
+		// Check for updates before running any command
+		ghClient := gh.NewClient()
+		_ = update.CheckForUpdates(ghClient, version.Get())
 	},
 }
 
@@ -30,7 +31,7 @@ func init() {
 	rootCmd.SetUsageTemplate(ui.ColorHeadings(rootCmd.UsageTemplate()))
 }
 
-// Execute is the root entrpoint
+// Execute adds all child commands to the root command and sets flags appropriately.
 func Execute() error {
 	return rootCmd.Execute()
 }
