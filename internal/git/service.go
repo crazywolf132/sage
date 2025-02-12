@@ -14,6 +14,7 @@ type Service interface {
 	Commit(msg string, allowEmpty bool, stageAll bool) error
 	CurrentBranch() (string, error)
 	Push(branch string, force bool) error
+	PushWithLease(branch string) error
 	GetDiff() (string, error)
 	DefaultBranch() (string, error)
 	MergedBranches(base string) ([]string, error)
