@@ -76,6 +76,16 @@ var configListCmd = &cobra.Command{
 			"API key for the AI service (can also be set via OPENAI_API_KEY env var)",
 			"Default:", ui.Gray("none"))
 
+		// Experimental Features
+		fmt.Printf("\n%s\n", ui.Bold("Experimental Features:"))
+		fmt.Printf("  %s\n    %s\n    %s\n    %s %s\n",
+			ui.White("experimental.<feature_name>"),
+			"Enable/disable experimental features globally or per repository.",
+			"Set to 'true' to enable a feature, 'false' to disable it.",
+			"Default:", ui.Gray("false"))
+		fmt.Printf("    %s\n", ui.Gray("Example: sage config set experimental.feature_name true"))
+		fmt.Printf("    %s\n", ui.Gray("Example: sage config set --local experimental.feature_name true"))
+
 		// Git Configuration
 		fmt.Printf("\n%s\n", ui.Bold("Git Settings:"))
 		fmt.Printf("  %s\n    %s\n    %s %s\n",
