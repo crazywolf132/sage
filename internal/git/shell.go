@@ -465,3 +465,88 @@ func (s *ShellGit) ListConflictedFiles() (string, error) {
 	}
 	return strings.TrimSpace(out), nil
 }
+
+// Stash saves the current changes to the stash with a message
+func (g *ShellGit) Stash(message string) error {
+	_, err := g.run("stash", "push", "-m", message)
+	return err
+}
+
+// StashPop applies and removes the most recent stash
+func (g *ShellGit) StashPop() error {
+	_, err := g.run("stash", "pop")
+	return err
+}
+
+// StashList returns a list of stashes
+func (g *ShellGit) StashList() ([]string, error) {
+	out, err := g.run("stash", "list")
+	if err != nil {
+		return nil, err
+	}
+	if out == "" {
+		return []string{}, nil
+	}
+	return strings.Split(strings.TrimSpace(out), "\n"), nil
+}
+
+// GetMergeBase finds the best common ancestor between two branches
+func (g *ShellGit) GetMergeBase(branch1, branch2 string) (string, error) {
+	out, err := g.run("merge-base", branch1, branch2)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// GetCommitCount returns the number of commits in the given revision range
+func (g *ShellGit) GetCommitCount(revisionRange string) (int, error) {
+	out, err := g.run("rev-list", "--count", revisionRange)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(out))
+}
+
+// GetBranchDivergence returns the total number of commits that differ between two branches
+func (g *ShellGit) GetBranchDivergence(branch1, branch2 string) (int, error) {
+	// Get the merge base
+	base, err := g.GetMergeBase(branch1, branch2)
+	if err != nil {
+		return 0, err
+	}
+
+	// Count commits in each branch since the merge base
+	count1, err := g.GetCommitCount(fmt.Sprintf("%s..%s", base, branch1))
+	if err != nil {
+		return 0, err
+	}
+
+	count2, err := g.GetCommitCount(fmt.Sprintf("%s..%s", base, branch2))
+	if err != nil {
+		return 0, err
+	}
+
+	return count1 + count2, nil
+}
+
+// GetCommitHash returns the commit hash for the given reference
+func (g *ShellGit) GetCommitHash(ref string) (string, error) {
+	out, err := g.run("rev-parse", ref)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// IsAncestor checks if commit1 is an ancestor of commit2
+func (g *ShellGit) IsAncestor(commit1, commit2 string) (bool, error) {
+	_, err := g.run("merge-base", "--is-ancestor", commit1, commit2)
+	if err != nil {
+		if strings.Contains(err.Error(), "exit status 1") {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}

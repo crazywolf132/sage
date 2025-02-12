@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -102,9 +104,38 @@ func AskCommitMessage(useConventional bool) (msg string, scope string, ctype str
 	return form.Msg, form.Scope, form.Type, err
 }
 
-// Info prints an informational message in the "sage" color.
+// Info prints an informational message
 func Info(msg string) {
-	fmt.Println(Sage(msg))
+	fmt.Printf("%s %s\n", Blue("ℹ"), msg)
+}
+
+// Success prints a success message
+func Success(msg string) {
+	fmt.Printf("%s %s\n", Green("✓"), msg)
+}
+
+// Warning prints a warning message
+func Warning(msg string) {
+	fmt.Printf("%s %s\n", Yellow("⚠"), msg)
+}
+
+// Error prints an error message
+func Error(msg string) {
+	fmt.Printf("%s %s\n", Red("✗"), msg)
+}
+
+// Confirm asks for user confirmation
+func Confirm(msg string) bool {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("%s %s [y/N]: ", Yellow("?"), msg)
+
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+
+	response = strings.ToLower(strings.TrimSpace(response))
+	return response == "y" || response == "yes"
 }
 
 func nonEmpty(val interface{}) error {

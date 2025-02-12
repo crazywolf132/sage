@@ -39,4 +39,12 @@ type Service interface {
 	GetBranchLastCommit(branch string) (time.Time, error)
 	GetBranchCommitCount(branch string) (int, error)
 	GetBranchMergeConflicts(branch string) (int, error)
+	Stash(message string) error
+	StashPop() error
+	StashList() ([]string, error)
+	GetMergeBase(branch1, branch2 string) (string, error)
+	GetCommitCount(revisionRange string) (int, error)
+	GetBranchDivergence(branch1, branch2 string) (int, error)
+	GetCommitHash(ref string) (string, error)
+	IsAncestor(commit1, commit2 string) (bool, error)
 }
