@@ -35,6 +35,7 @@ Examples:
   sage sync --continue   # Continue a sync after resolving conflicts
   sage sync --abort      # Abort the current sync operation
   sage sync --force      # Force push after syncing (use with caution)`,
+	Aliases: []string{"pull", "s"},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		g := git.NewShellGit()
 

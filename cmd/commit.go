@@ -32,7 +32,8 @@ Examples:
 
   # Stage everything (including .sage/) and commit with push
   sage commit -p "fix: resolve null pointer error"`,
-	Args: cobra.MaximumNArgs(1),
+	Args:    cobra.MaximumNArgs(1),
+	Aliases: []string{"c"},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 0 {
 			commitMessage = args[0]
