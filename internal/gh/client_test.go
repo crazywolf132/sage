@@ -5,9 +5,31 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 )
+
+// mockExecCommand is used to mock exec.Command during tests
+var mockExecCommand func(string, ...string) *exec.Cmd
+
+func init() {
+	// Replace the exec.Command with our mock
+	execCommand = exec.Command
+}
+
+// Helper function to temporarily replace exec.Command with a mock
+func withMockExec(mock func(string, ...string) *exec.Cmd, f func()) {
+	oldExec := execCommand
+	execCommand = mock
+	defer func() { execCommand = oldExec }()
+	f()
+}
+
+// Mock command that always fails
+func mockCommandError(name string, args ...string) *exec.Cmd {
+	return exec.Command("false")
+}
 
 func TestNewClient(t *testing.T) {
 	// Save original environment
@@ -23,24 +45,28 @@ func TestNewClient(t *testing.T) {
 		sageToken string
 		ghToken   string
 		wantToken string
+		mockExec  func(string, ...string) *exec.Cmd
 	}{
 		{
 			name:      "SAGE_GITHUB_TOKEN takes precedence",
 			sageToken: "sage-token",
 			ghToken:   "gh-token",
 			wantToken: "sage-token",
+			mockExec:  mockCommandError, // Should not be called
 		},
 		{
 			name:      "Falls back to GITHUB_TOKEN",
 			sageToken: "",
 			ghToken:   "gh-token",
 			wantToken: "gh-token",
+			mockExec:  mockCommandError, // Should not be called
 		},
 		{
 			name:      "No tokens",
 			sageToken: "",
 			ghToken:   "",
 			wantToken: "",
+			mockExec:  mockCommandError, // Force gh CLI check to fail
 		},
 	}
 
@@ -49,14 +75,16 @@ func TestNewClient(t *testing.T) {
 			os.Setenv("SAGE_GITHUB_TOKEN", tt.sageToken)
 			os.Setenv("GITHUB_TOKEN", tt.ghToken)
 
-			client := NewClient()
-			if c, ok := client.(*pullRequestAPI); ok {
-				if c.token != tt.wantToken {
-					t.Errorf("NewClient() token = %v, want %v", c.token, tt.wantToken)
+			withMockExec(tt.mockExec, func() {
+				client := NewClient()
+				if c, ok := client.(*pullRequestAPI); ok {
+					if c.token != tt.wantToken {
+						t.Errorf("NewClient() token = %v, want %v", c.token, tt.wantToken)
+					}
+				} else {
+					t.Error("NewClient() did not return *pullRequestAPI")
 				}
-			} else {
-				t.Error("NewClient() did not return *pullRequestAPI")
-			}
+			})
 		})
 	}
 }

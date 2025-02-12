@@ -569,13 +569,36 @@ func NewClient() Client {
 	}
 }
 
-// getToken returns the GitHub token from environment variables
+// execCommand allows us to mock exec.Command in tests
+var execCommand = exec.Command
+
+// getToken returns the GitHub token from environment variables or GitHub CLI
 func getToken() string {
+	// Try environment variables first
 	token := os.Getenv("SAGE_GITHUB_TOKEN")
-	if token == "" {
-		token = os.Getenv("GITHUB_TOKEN")
+	if token != "" {
+		return token
 	}
-	return token
+
+	token = os.Getenv("GITHUB_TOKEN")
+	if token != "" {
+		return token
+	}
+
+	// Check if GitHub CLI is installed
+	if _, err := execCommand("gh", "--version").Output(); err == nil {
+		// Try getting token from GitHub CLI
+		cmd := execCommand("gh", "auth", "token")
+		cmd.Stderr = nil // Suppress stderr output
+		if out, err := cmd.Output(); err == nil {
+			token = strings.TrimSpace(string(out))
+			if token != "" {
+				return token
+			}
+		}
+	}
+
+	return ""
 }
 
 // getOwnerAndRepo extracts the owner and repo from the git remote URL
