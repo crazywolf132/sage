@@ -175,12 +175,64 @@ func (p *pullRequestAPI) ListPRs(state string) ([]PullRequest, error) {
 
 // MergePR does PUT /repos/:owner/:repo/pulls/:pull_number/merge
 func (p *pullRequestAPI) MergePR(num int, method string) error {
+	// First get the repository settings to check allowed merge methods
+	repoURL := fmt.Sprintf("%s/repos/%s/%s", baseURL, p.owner, p.repo)
+	data, err := p.do("GET", repoURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get repository settings: %w", err)
+	}
+
+	var repo struct {
+		AllowMergeCommit bool `json:"allow_merge_commit"`
+		AllowSquashMerge bool `json:"allow_squash_merge"`
+		AllowRebaseMerge bool `json:"allow_rebase_merge"`
+	}
+	if err := json.Unmarshal(data, &repo); err != nil {
+		return fmt.Errorf("failed to parse repository settings: %w", err)
+	}
+
+	// Validate the requested merge method against repository settings
+	switch method {
+	case "merge":
+		if !repo.AllowMergeCommit {
+			return fmt.Errorf("merge commits are not allowed on this repository. Use 'squash' or 'rebase' instead")
+		}
+	case "squash":
+		if !repo.AllowSquashMerge {
+			return fmt.Errorf("squash merging is not allowed on this repository. Use 'merge' or 'rebase' instead")
+		}
+	case "rebase":
+		if !repo.AllowRebaseMerge {
+			return fmt.Errorf("rebase merging is not allowed on this repository. Use 'merge' or 'squash' instead")
+		}
+	default:
+		return fmt.Errorf("invalid merge method '%s'. Must be one of: merge, squash, rebase", method)
+	}
+
+	// If the method is allowed, proceed with the merge
 	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/merge", baseURL, p.owner, p.repo, num)
 	payload := map[string]string{
-		"merge_method": method, // "merge", "squash", or "rebase"
+		"merge_method": method,
 	}
-	_, err := p.do("PUT", u, payload)
-	return err
+	_, err = p.do("PUT", u, payload)
+	if err != nil {
+		// Check for specific error cases
+		if strings.Contains(err.Error(), "405") {
+			// Try to provide more helpful error messages
+			if strings.Contains(err.Error(), "not mergeable") {
+				return fmt.Errorf("PR is not mergeable. Please resolve conflicts first")
+			}
+			if strings.Contains(err.Error(), "reviews") {
+				return fmt.Errorf("required reviews are missing. Please get necessary approvals first")
+			}
+			if strings.Contains(err.Error(), "status") {
+				return fmt.Errorf("required status checks have not passed. Please ensure all checks are green")
+			}
+		}
+		return fmt.Errorf("failed to merge PR: %w", err)
+	}
+
+	return nil
 }
 
 // ClosePR does PATCH /repos/:owner/:repo/pulls/:pull_number (state=closed)
