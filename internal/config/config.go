@@ -75,8 +75,8 @@ func Set(key, value string, global bool) error {
 		}
 	}
 
-	// For sensitive keys in global config, encrypt the value
-	if global {
+	// For sensitive keys in global config, encrypt non-empty values
+	if global && value != "" {
 		for _, k := range sensitiveKeys {
 			if strings.HasPrefix(strings.ToLower(key), strings.ToLower(k)) {
 				encryptedValue, err := encryptValue(value)
