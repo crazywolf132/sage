@@ -10,8 +10,18 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:           "sage",
-	Short:         "Burning away Git complexity",
+	Use:   "sage",
+	Short: "Burning away Git complexity",
+	Long: `Sage is a modern CLI tool that simplifies Git workflows and enhances productivity.
+
+It provides intuitive commands for common Git operations and adds powerful features like:
+• Smart commit messages with AI assistance
+• Streamlined PR workflows and status checks
+• Easy branch synchronization
+• GitHub integration
+• Interactive UI elements for better user experience
+
+Run 'sage help' to see all available commands or 'sage <command> --help' for detailed information about a specific command.`,
 	Version:       version.Get(),
 	SilenceUsage:  true,
 	SilenceErrors: true,
