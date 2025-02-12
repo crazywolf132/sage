@@ -7,13 +7,13 @@ require (
 	github.com/BurntSushi/toml v1.4.0
 	github.com/briandowns/spinner v1.23.2
 	github.com/crazywolf132/termchroma v0.1.1
+	github.com/hashicorp/go-version v1.7.0
 	github.com/spf13/cobra v1.8.1
 )
 
 require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/fatih/color v1.7.0 // indirect
-	github.com/hashicorp/go-version v1.7.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect

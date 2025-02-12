@@ -26,7 +26,15 @@ jobs:
           go-version: stable
 
       - name: Install dependencies
-        run: go mod tidy
+        run: |
+          go mod tidy
+          # Commit any go.mod changes to avoid dirty state
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git add go.mod go.sum
+            git commit -m "chore: update dependencies [skip ci]"
+          fi
 
       - name: Run tests
         run: go test ./...
@@ -100,8 +108,6 @@ jobs:
       - name: Create and push tag
         if: env.SHOULD_RELEASE == 'true'
         run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
           git tag -a ${{ env.NEW_TAG }} -m "Release ${{ env.NEW_TAG }}"
           git push origin ${{ env.NEW_TAG }}
 
