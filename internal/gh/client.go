@@ -555,9 +555,15 @@ func (p *pullRequestAPI) GetLatestRelease() (string, error) {
 
 // NewClient creates a new GitHub client
 func NewClient() Client {
-	// Get owner and repo from git remote
 	owner, repo := getOwnerAndRepo()
+	if owner == "" || repo == "" {
+		panic("Could not determine GitHub repository. Please set SAGE_GITHUB_OWNER and SAGE_GITHUB_REPO environment variables or ensure you have a valid git remote")
+	}
+
 	token := getToken()
+	if token == "" {
+		panic("GitHub token not found. Please set SAGE_GITHUB_TOKEN or GITHUB_TOKEN environment variable")
+	}
 
 	return &pullRequestAPI{
 		owner:  owner,
@@ -569,6 +575,7 @@ func NewClient() Client {
 
 // getToken returns the GitHub token from environment variables
 func getToken() string {
+	// Try environment variables first
 	token := os.Getenv("SAGE_GITHUB_TOKEN")
 	if token == "" {
 		token = os.Getenv("GITHUB_TOKEN")
@@ -578,6 +585,14 @@ func getToken() string {
 
 // getOwnerAndRepo extracts the owner and repo from the git remote URL
 func getOwnerAndRepo() (string, string) {
+	// Try environment variables first
+	owner := os.Getenv("SAGE_GITHUB_OWNER")
+	repo := os.Getenv("SAGE_GITHUB_REPO")
+	if owner != "" && repo != "" {
+		return owner, repo
+	}
+
+	// Fall back to git remote
 	cmd := exec.Command("git", "remote", "get-url", "origin")
 	out, err := cmd.Output()
 	if err != nil {
