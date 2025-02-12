@@ -15,6 +15,7 @@ type MockGit struct {
 	commits       map[string]string // hash -> message
 	staged        map[string]bool
 	stashed       []string
+	hasChanges    bool // Track if there are unstaged changes
 
 	// Call tracking for tests
 	calls map[string]int
@@ -22,7 +23,7 @@ type MockGit struct {
 
 // NewMockGit creates a new mock Git service
 func NewMockGit() *MockGit {
-	return &MockGit{
+	m := &MockGit{
 		currentBranch: "main",
 		isClean:       true,
 		isRepo:        true,
@@ -32,6 +33,9 @@ func NewMockGit() *MockGit {
 		stashed:       make([]string, 0),
 		calls:         make(map[string]int),
 	}
+	// Initialize with main branch
+	m.branches["main"] = true
+	return m
 }
 
 func (m *MockGit) trackCall(method string) {
@@ -53,6 +57,9 @@ func (m *MockGit) IsClean() (bool, error) {
 // StageAll implements Service.StageAll
 func (m *MockGit) StageAll() error {
 	m.trackCall("StageAll")
+	m.staged["mock-file"] = true
+	m.hasChanges = true
+	m.isClean = false
 	return nil
 }
 
@@ -97,11 +104,12 @@ func (m *MockGit) Checkout(name string) error {
 // Commit implements Service.Commit
 func (m *MockGit) Commit(msg string, allowEmpty bool, stageAll bool) error {
 	m.trackCall("Commit")
-	if !allowEmpty && len(m.staged) == 0 {
+	if !allowEmpty && !m.hasChanges && len(m.staged) == 0 {
 		return fmt.Errorf("no changes to commit")
 	}
 	m.commits["mock-hash"] = msg
 	m.staged = make(map[string]bool)
+	m.hasChanges = false
 	m.isClean = true
 	return nil
 }
@@ -215,6 +223,7 @@ func (m *MockGit) ResetSoft(ref string) error {
 	return nil
 }
 
+// ListBranches returns a list of all local branches
 func (m *MockGit) ListBranches() ([]string, error) {
 	m.trackCall("ListBranches")
 	branches := make([]string, 0, len(m.branches))
