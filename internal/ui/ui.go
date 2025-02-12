@@ -196,3 +196,13 @@ func init() {
 	gray, _ = termchroma.ANSIForeground("#6B737C")
 	green, _ = termchroma.ANSIForeground("#98C379")
 }
+
+// AskString prompts the user for a string input
+func AskString(message string) string {
+	var response string
+	prompt := &survey.Input{
+		Message: message,
+	}
+	survey.AskOne(prompt, &response)
+	return response
+}
