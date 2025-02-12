@@ -211,13 +211,29 @@ func performSync(g git.Service, spinner *ui.Spinner) error {
 	// 4. Pull any remote changes for current branch
 	spinner.Start(fmt.Sprintf("Pulling remote changes for %s", curBranch))
 	if err := g.PullRebase(); err != nil {
-		// If pull fails due to no tracking branch, just continue
-		if !strings.Contains(err.Error(), "no tracking branch") {
+		// If pull fails due to no tracking branch, set it up
+		if strings.Contains(err.Error(), "no tracking information") || strings.Contains(err.Error(), "no upstream branch") {
+			// Try to set up the upstream branch
+			if err := g.RunInteractive("branch", "--set-upstream-to", fmt.Sprintf("origin/%s", curBranch), curBranch); err != nil {
+				// If setting upstream fails, the branch might not exist on remote yet
+				// This is fine, we can continue with the sync
+				spinner.StopSuccess()
+			} else {
+				// Try pulling again now that upstream is set
+				if err := g.PullRebase(); err != nil {
+					// If it still fails, just continue - branch might be new
+					spinner.StopSuccess()
+				} else {
+					spinner.StopSuccess()
+				}
+			}
+		} else {
 			spinner.StopFail()
 			return handleSyncError(g, err, &result)
 		}
+	} else {
+		spinner.StopSuccess()
 	}
-	spinner.StopSuccess()
 
 	// 5. Rebase current branch
 	spinner.Start(fmt.Sprintf("Rebasing %s onto %s", curBranch, parentBranch))
