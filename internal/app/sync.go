@@ -221,7 +221,7 @@ func performSync(g git.Service, spinner *ui.Spinner) error {
 		ui.Warning("Failed to record rebase operation in undo history")
 	}
 
-	// Ensure we're on the correct branch after rebase
+	// Ensure we're on the correct branch
 	if finalBranch, err := g.CurrentBranch(); err == nil && finalBranch != curBranch {
 		if err := g.Checkout(curBranch); err != nil {
 			ui.Warning(fmt.Sprintf("Failed to switch back to %s after rebase", curBranch))
@@ -242,6 +242,14 @@ func performSync(g git.Service, spinner *ui.Spinner) error {
 			ui.Warning("Failed to record stash pop operation in undo history")
 		}
 	}
+
+	// 6. Push changes with force-with-lease
+	spinner.Start(fmt.Sprintf("Pushing %s to remote", curBranch))
+	if err := g.Push(curBranch, "force-with-lease"); err != nil {
+		spinner.StopFail()
+		return fmt.Errorf("failed to push changes: %w", err)
+	}
+	spinner.StopSuccess()
 
 	return nil
 }

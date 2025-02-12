@@ -38,7 +38,7 @@ func StartBranch(g git.Service, newBranch string, push bool) error {
 	}
 
 	if push {
-		return g.Push(newBranch, false)
+		return g.Push(newBranch, "")
 	}
 	return nil
 }

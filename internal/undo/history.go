@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -66,7 +67,7 @@ func (h *History) GetOperations(category string, since time.Time) []Operation {
 
 // Save persists the history to disk
 func (h *History) Save(repoPath string) error {
-	historyPath := filepath.Join(repoPath, ".sage", "undo_history.json")
+	historyPath := filepath.Join(repoPath, ".git", "sage", "undo_history.json")
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(historyPath), 0755); err != nil {
@@ -87,7 +88,12 @@ func (h *History) Save(repoPath string) error {
 
 // Load reads the history from disk
 func (h *History) Load(repoPath string) error {
-	historyPath := filepath.Join(repoPath, ".sage", "undo_history.json")
+	// Try to migrate old history file if it exists
+	if err := h.migrateOldHistory(repoPath); err != nil {
+		return fmt.Errorf("failed to migrate history: %w", err)
+	}
+
+	historyPath := filepath.Join(repoPath, ".git", "sage", "undo_history.json")
 
 	data, err := os.ReadFile(historyPath)
 	if err != nil {
@@ -103,6 +109,61 @@ func (h *History) Load(repoPath string) error {
 	}
 
 	return nil
+}
+
+// migrateOldHistory moves the history file from .sage to .git/sage if it exists
+func (h *History) migrateOldHistory(repoPath string) error {
+	oldPath := filepath.Join(repoPath, ".sage", "undo_history.json")
+	newPath := filepath.Join(repoPath, ".git", "sage", "undo_history.json")
+
+	// Check if old file exists
+	if _, err := os.Stat(oldPath); os.IsNotExist(err) {
+		return nil // No old file to migrate
+	}
+
+	// Check if new file already exists
+	if _, err := os.Stat(newPath); err == nil {
+		// New file exists, don't overwrite it
+		return nil
+	}
+
+	// Read old file
+	data, err := os.ReadFile(oldPath)
+	if err != nil {
+		return fmt.Errorf("failed to read old history file: %w", err)
+	}
+
+	// Create new directory if needed
+	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
+		return fmt.Errorf("failed to create new history directory: %w", err)
+	}
+
+	// Write to new location
+	if err := os.WriteFile(newPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write new history file: %w", err)
+	}
+
+	// Delete old file
+	if err := os.Remove(oldPath); err != nil {
+		return fmt.Errorf("failed to remove old history file: %w", err)
+	}
+
+	// Try to remove .sage directory if it's empty
+	if err := os.Remove(filepath.Dir(oldPath)); err != nil {
+		// Ignore error if directory is not empty
+		if !os.IsNotExist(err) && !isNotEmptyError(err) {
+			return fmt.Errorf("failed to remove old directory: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// isNotEmptyError checks if the error is because the directory is not empty
+func isNotEmptyError(err error) bool {
+	return strings.Contains(err.Error(), "directory not empty") ||
+		strings.Contains(err.Error(), "directory is not empty") ||
+		strings.Contains(err.Error(), "device or resource busy")
 }
 
 // Clear removes all operations from history

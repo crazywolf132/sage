@@ -208,7 +208,7 @@ func Commit(g git.Service, opts CommitOptions) (CommitResult, error) {
 	// Push the commit to remote if requested
 	if opts.PushAfterCommit {
 		// Push changes to remote repository
-		if err := g.Push(branch, false); err != nil {
+		if err := g.Push(branch, ""); err != nil {
 			return result, err
 		}
 		result.Pushed = true

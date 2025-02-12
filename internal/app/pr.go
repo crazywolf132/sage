@@ -31,7 +31,7 @@ func CreatePullRequest(g git.Service, ghc gh.Client, opts CreatePROpts) (*gh.Pul
 		return nil, err
 	}
 	// push local changes first
-	if err := g.Push(curBranch, false); err != nil {
+	if err := g.Push(curBranch, ""); err != nil {
 		return nil, err
 	}
 	if opts.Base == "" {
