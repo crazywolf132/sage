@@ -18,9 +18,62 @@ func NewShellGit() Service {
 	return &ShellGit{}
 }
 
+// validateRef validates a Git reference name
+func validateRef(ref string) error {
+	if ref == "" {
+		return fmt.Errorf("empty reference name")
+	}
+	// Check for common Git command injection patterns
+	if strings.Contains(ref, "&&") ||
+		strings.Contains(ref, "||") ||
+		strings.Contains(ref, ";") ||
+		strings.Contains(ref, "|") ||
+		strings.Contains(ref, ">") ||
+		strings.Contains(ref, "<") ||
+		strings.Contains(ref, "`") ||
+		strings.Contains(ref, "$") ||
+		strings.Contains(ref, "(") ||
+		strings.Contains(ref, ")") {
+		return fmt.Errorf("invalid characters in reference name")
+	}
+	return nil
+}
+
+// validatePath validates a file path
+func validatePath(path string) error {
+	if path == "" {
+		return fmt.Errorf("empty path")
+	}
+	// Check for path traversal and command injection
+	if strings.Contains(path, "..") ||
+		strings.Contains(path, "&&") ||
+		strings.Contains(path, "||") ||
+		strings.Contains(path, ";") ||
+		strings.Contains(path, "|") ||
+		strings.Contains(path, ">") ||
+		strings.Contains(path, "<") ||
+		strings.Contains(path, "`") ||
+		strings.Contains(path, "$") ||
+		strings.Contains(path, "(") ||
+		strings.Contains(path, ")") {
+		return fmt.Errorf("invalid characters in path")
+	}
+	return nil
+}
+
 // run executes a git command with the given arguments and returns its output
 // It captures and returns any error messages through stderr
 func (s *ShellGit) run(args ...string) (string, error) {
+	// Validate all arguments
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			continue // Skip flags
+		}
+		if err := validateRef(arg); err != nil {
+			return "", fmt.Errorf("invalid argument: %w", err)
+		}
+	}
+
 	cmd := exec.Command("git", args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -92,6 +145,10 @@ func (s *ShellGit) Commit(msg string, allowEmpty bool, stageAll bool) error {
 // Push pushes the specified branch to the remote repository
 // If force is true, performs a force push
 func (s *ShellGit) Push(branch string, force bool) error {
+	if err := validateRef(branch); err != nil {
+		return fmt.Errorf("invalid branch name: %w", err)
+	}
+
 	args := []string{"push", "origin", branch}
 	if force {
 		args = []string{"push", "--force", "origin", branch}
@@ -152,6 +209,9 @@ func (s *ShellGit) FetchAll() error {
 
 // Checkout switches to the specified branch or commit
 func (s *ShellGit) Checkout(name string) error {
+	if err := validateRef(name); err != nil {
+		return fmt.Errorf("invalid checkout target: %w", err)
+	}
 	_, err := s.run("checkout", name)
 	return err
 }
@@ -173,6 +233,9 @@ func (s *ShellGit) PullRebase() error {
 
 // CreateBranch creates a new branch with the specified name
 func (s *ShellGit) CreateBranch(name string) error {
+	if err := validateRef(name); err != nil {
+		return fmt.Errorf("invalid branch name: %w", err)
+	}
 	_, err := s.run("branch", name)
 	return err
 }

@@ -16,212 +16,195 @@ So I built Sage to make my life easier, and hopefully yours too!
 
 * **Workflow Automation**: Sage handles common Git operations with smart defaults and built-in best practices.
 * **Simple Commands**: Instead of typing `git checkout -b feature/branch && git pull origin main && git push -u origin feature/branch`, just do `sage start feature/branch`. Your fingers will thank you.
-* **Smart Recovery**: `sage undo` gives you a clean way to reverse your last operation.
+* **Time Travel (Kind of)**: A super detailed undo system that lets you track and revert operations with precision.
 * **PR Magic**: Create and manage pull requests right from your terminal. No more context-switching to GitHub!
-* **Your Tool, Your Rules**: Customize Sage to work how you want. Because everyone has their preferred Git workflow.
+* **Branch Wizardry**: Smart syncing with automatic stash handling and conflict detection.
+* **AI Helper** 🤖: Optional AI features for commit messages and PR content (needs OpenAI API key).
 
-## Getting Started
+## Getting Started 🚀
 
-1. Install Go (1.20+ recommended).
-2. Clone this repo:
+### Requirements
+- Go 1.20 or later (required for module support)
+- Git (obviously!)
+- GitHub account for PR features
 
+### Installation Options
+
+1. Quick Install (recommended):
+```bash
+go install github.com/crazywolf132/sage@latest
+```
+
+2. Build from source:
 ```bash
 git clone https://github.com/crazywolf132/sage.git
 cd sage
+go build
+./sage -v
 ```
 
-3. Build:
-
-```bash
-go build -o sage
-```
-
-4. Install Sage to your PATH (optional, for convenience):
-
-```bash
-go install
-```
-
-5. Check it:
-
+3. Verify installation:
 ```bash
 sage --help
-sage version
+sage -v
 ```
 
-## Basic Usage 🚀
+## Basic Usage 🛠️
 
 ### Start a new branch
-
 ```bash
 sage start feature/awesome-stuff
 ```
 Boom! New branch created, latest updates pulled, and pushed to GitHub. All in one go.
 
 ### Commit your masterpiece
-
 ```bash
 sage commit "Add that thing that does the stuff"
 ```
 Stages and commits everything. No more `git add .` followed by `git commit -m` dance.
 
 ### Push it real good
-
 ```bash
 sage push
 ```
 Pushes your work to origin. If you need --force, Sage will make sure you don't shoot yourself in the foot.
 
-### Undo that thing you just did
-
+### Oops! (Undo System) 🔄
 ```bash
+# See what you've been up to
+sage undo --history
+
+# Take back that last thing you did
 sage undo
+
+# Undo something specific
+sage undo --id <operation-id>
+
+# Preview before you undo (safety first!)
+sage undo --preview
+
+# Find exactly what you need to undo
+sage undo --category commit --group branch
 ```
-We all make mistakes. This one's got your back.
 
 ### PR stuff made easy
-
 ```bash
 # Create a PR
 sage pr create --title "🚀 Add awesome feature" --body "Trust me, this is good"
 
 # See what's cooking
-sage pr list --state open
+sage pr list
 
 # Check out someone's PR
 sage pr checkout 42
+
+# See what reviewers are saying
+sage pr todos 42
 
 # Merge it in
 sage pr merge 42 --method squash
 ```
 
-## Command Guide 📖
-
-Here's a complete guide to Sage's commands:
-
-### Branch Management
-
-```bash
-# Create a new branch from default branch (usually main)
-sage start <branch-name>
-
-# Sync current branch with default branch
-sage sync
-
-# View current branch status
-sage status
-
-# Clean up merged branches
-sage clean
-```
-
-### Changes & Commits
-
-```bash
-# Stage and commit changes (excluding .sage/ by default)
-sage commit "<message>"
-
-# Stage and commit with conventional commit format
-sage commit -c
-
-# Use AI to generate commit message based on changes
-sage commit --ai
-
-# Push changes to remote
-sage push
-
-# Undo last operation (commit, merge, etc)
-sage undo
-
-# Squash commits interactively
-sage squash
-```
-
-### Pull Request Operations
-
-```bash
-# Create a new PR
-sage pr create --title "<title>" --body "<description>"
-
-# List pull requests
-sage pr list [--state open|closed|all]
-
-# Check out a PR locally
-sage pr checkout <pr-number>
-
-# View PR status
-sage pr status [pr-number]
-
-# Update PR fields
-sage pr update [pr-number] [--title "<title>"] [--body "<body>"] [--draft] [--labels label1,label2] [--reviewers user1,user2]
-
-# Update PR with AI-generated content
-sage pr update --ai
-
-# Merge a PR
-sage pr merge <pr-number> [--method merge|squash|rebase]
-
-# Close a PR without merging
-sage pr close <pr-number>
-
-# List PR review comments and TODOs
-sage pr todos [pr-number]
-```
-
-### Configuration
-
-```bash
-# View current configuration
-sage config
-
-# Set configuration values
-sage config set <key> <value>
-
-# Common config options:
-# - defaultBranch: Your main branch name (default: main)
-# - defaultMergeMethod: Preferred PR merge method (default: merge)
-# - conventionalCommits: Use conventional commit format (default: false)
-# - aiCommits: Use AI for commit messages (default: false)
-```
-
-### Other Commands
-
-```bash
-# Check Sage version
-sage version
-
-# View help for any command
-sage help [command]
-
-# View detailed help for a specific command
-sage <command> --help
-```
+## Setting Things Up ⚙️
 
 ### Environment Variables
+- `SAGE_GITHUB_TOKEN` or `GITHUB_TOKEN`: Your GitHub token (if you have the `gh` CLI installed and authenticated, we'll use that automatically!)
+  - Required scopes: `repo`, `read:org` (for organization repos)
+- `SAGE_CONFIG`: Where to keep your config
+- `SAGE_OPENAI_KEY`: For AI features (totally optional)
 
-- `SAGE_GITHUB_TOKEN` or `GITHUB_TOKEN`: Your GitHub personal access token
-- `SAGE_CONFIG`: Custom config file location
-- `SAGE_OPENAI_KEY`: OpenAI API key for AI features
+### Quick Config
+```bash
+# AI Settings
+sage config set ai.model gpt-4        # AI model to use
+sage config set ai.base_url <url>     # Custom AI API endpoint (optional)
 
-### Notes
+# Git Settings
+sage config set git.default_branch main    # Default branch for operations
+sage config set git.merge_method squash    # Default PR merge method
 
-- The `.sage/` directory is excluded from commits by default unless explicitly staged
-- Use `git add -f .sage/` to force include the `.sage/` directory in commits
-- AI features require an OpenAI API key to be set
+# PR Settings
+sage config set pr.draft false            # Create PRs as drafts by default
+sage config set pr.reviewers user1,user2  # Default PR reviewers
+sage config set pr.labels feature,docs    # Default PR labels
+```
 
-## Future Growth
+### Local Storage
+Sage stores its data in `.sage/` in your repository:
+- `undo_history.json`: Operation history for the undo system
+- `config.json`: Local repository configuration
+These files are automatically ignored in Git operations.
+
+### AI Features & Privacy
+When using AI features:
+- Commit diffs, messages, and PR content are sent to OpenAI
+- Basic API key security (stored in global config only)
+- Note: Currently no filtering of sensitive data - use with caution
+- Consider reviewing diffs before using AI features
+
+## Technical Details 🔧
+
+### Error Handling
+- Operations are tracked in the undo system for recovery
+- Clear error messages help diagnose issues
+- Failed operations can be reverted using the undo system
+- State is preserved when possible during errors
+
+### Conflict Resolution
+- Automatic stash/unstash of local changes during sync
+- Branch synchronization with conflict detection
+- Clear reporting of conflicted files
+- Status tracking during conflict resolution
+
+### Edge Cases
+- Preserves uncommitted changes via stashing
+- Basic force push protection with confirmation
+- Operation history for recovery
+- Handles common Git scenarios
+
+## Where We're At 🎯
+
+Here's what's ready to roll and what we're cooking up:
+
+✅ **Ready to Rock**
+- Detailed undo system with operation tracking and selective undo
+- GitHub PR management (create, list, checkout, merge)
+- Branch synchronization with stash handling
+- AI-powered commit messages and PR content
+- Conventional commit support
+- Branch cleanup with safety checks
+- Operation history with filtering and preview
+
+🔄 **In the Workshop**
+- Enhanced conflict resolution tools
+- More PR automation features
+- Performance optimizations
+- Extended documentation
+- Submodule support
+- Advanced branch scenarios
+
+## Known Limitations
+- Currently supports GitHub only (GitLab/Bitbucket planned)
+- Large repositories might experience slower undo history loading
+- AI features require internet connectivity and OpenAI API key
+- No filtering of sensitive data in AI features
+- Basic force push protection (confirmation only)
+- Limited handling of advanced Git scenarios (submodules, detached HEAD)
+- Some edge cases require manual conflict resolution
+- PR features require GitHub token with appropriate scopes
+
+## Future Growth 🌱
 
 Even though I'm just one person maintaining this right now, I see a lot of potential for Sage:
 
 * **More Git Host Support**: Integrations with GitLab, Bitbucket, or self-hosted Git services.
-* **Enhanced Undo**: A detailed operation log to revert more than just the last commit or merge.
 * **Interactive Conflict Resolution**: Potential for a TUI or guided conflict resolution flow.
 * **Plugin System**: Let teams extend Sage with custom commands or checks.
 * **Optional Lint/Checks**: Pre-commit hooks, code checks, or commit message style enforcement.
 
 I hope to grow this into a stable, community-driven project where developers can feel more confident in their daily workflows.
 
-## Contributing & Feedback
+## Contributing & Feedback 🤝
 
 I welcome all issues, ideas, and pull requests. If you run into a bug or have a feature request, please open an issue. This project is something I work on in my spare time, so replies may not be immediate—but I'll do my best to keep up.
 
@@ -231,9 +214,11 @@ Some ways you can help:
 * **Submit a Pull Request**: If you fix something or add a feature, I'd love to see it.
 * **Share Your Workflow**: Hearing how you use Sage (or what's blocking you) helps guide development.
 
+Check out [ROADMAP.md](ROADMAP.md) to see what we're planning!
+
 ## License
 
-MIT License. Feel free to use Sage for your own projects, modify it, or share it, as long as you follow the license terms.
+MIT License - See [LICENSE](LICENSE) for details.
 
 ---
 

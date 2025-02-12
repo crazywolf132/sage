@@ -1,11 +1,17 @@
 package config
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/crazywolf132/sage/internal/git"
@@ -49,21 +55,36 @@ func Get(key string, useLocal bool) string {
 	return ""
 }
 
-func Set(key, value string, useLocal bool) error {
-	if useLocal {
-		g := git.NewShellGit()
-		repo, err := g.IsRepo()
-		if err != nil {
-			return err
+func Set(key, value string, global bool) error {
+	if !global {
+		// Check if this is a sensitive key that shouldn't be stored locally
+		for _, k := range sensitiveKeys {
+			if strings.HasPrefix(strings.ToLower(key), strings.ToLower(k)) {
+				return fmt.Errorf("security: sensitive keys like %s must be set globally", key)
+			}
 		}
-		if !repo {
-			return errors.New("not in a git repository")
-		}
-		localData[key] = value
-		return writeLocalConfig()
 	}
-	globalData[key] = value
-	return writeGlobalConfig()
+
+	// For sensitive keys in global config, encrypt the value
+	if global {
+		for _, k := range sensitiveKeys {
+			if strings.HasPrefix(strings.ToLower(key), strings.ToLower(k)) {
+				encryptedValue, err := encryptValue(value)
+				if err != nil {
+					return fmt.Errorf("failed to secure sensitive value: %w", err)
+				}
+				value = encryptedValue
+				break
+			}
+		}
+	}
+
+	if global {
+		globalData[key] = value
+		return writeGlobalConfig()
+	}
+	localData[key] = value
+	return writeLocalConfig()
 }
 
 // load / write global
@@ -165,6 +186,11 @@ func loadLocalConfig() error {
 // KEYS WE DON'T WANT TO SAVE LOCALLY:
 var sensitiveKeys = []string{
 	"api.api_key",
+	"github.token",
+	"openai.api_key",
+	"ai.api_key",
+	"auth.token",
+	"credentials.token",
 }
 
 func writeLocalConfig() error {
@@ -185,4 +211,70 @@ func writeLocalConfig() error {
 		return err
 	}
 	return os.WriteFile(localPath(), b, 0644)
+}
+
+// encryptValue encrypts sensitive configuration values
+func encryptValue(value string) (string, error) {
+	key := make([]byte, 32) // AES-256
+	if _, err := io.ReadFull(rand.Reader, key); err != nil {
+		return "", fmt.Errorf("failed to generate encryption key: %w", err)
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("failed to create cipher: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("failed to create GCM: %w", err)
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", fmt.Errorf("failed to generate nonce: %w", err)
+	}
+
+	// Store key alongside encrypted value
+	ciphertext := gcm.Seal(nonce, nonce, []byte(value), nil)
+	return base64.StdEncoding.EncodeToString(append(key, ciphertext...)), nil
+}
+
+// decryptValue decrypts sensitive configuration values
+func decryptValue(encrypted string) (string, error) {
+	data, err := base64.StdEncoding.DecodeString(encrypted)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode encrypted value: %w", err)
+	}
+
+	if len(data) < 32 {
+		return "", fmt.Errorf("invalid encrypted value format")
+	}
+
+	key := data[:32]
+	ciphertext := data[32:]
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("failed to create cipher: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("failed to create GCM: %w", err)
+	}
+
+	if len(ciphertext) < gcm.NonceSize() {
+		return "", fmt.Errorf("invalid ciphertext length")
+	}
+
+	nonce := ciphertext[:gcm.NonceSize()]
+	ciphertext = ciphertext[gcm.NonceSize():]
+
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to decrypt value: %w", err)
+	}
+
+	return string(plaintext), nil
 }
