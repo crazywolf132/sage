@@ -61,8 +61,12 @@ func validatePath(path string) error {
 	return nil
 }
 
-// run executes a git command with the given arguments and returns its output
-// It captures and returns any error messages through stderr
+// Run executes a git command with the given arguments and returns its output
+func (s *ShellGit) Run(args ...string) (string, error) {
+	return s.run(args...)
+}
+
+// run is the internal implementation of Run
 func (s *ShellGit) run(args ...string) (string, error) {
 	// Validate all arguments
 	for _, arg := range args {
