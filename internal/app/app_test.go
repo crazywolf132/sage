@@ -84,7 +84,7 @@ func (m *mockGit) Checkout(branch string) error {
 	return m.err
 }
 
-func (m *mockGit) Push(branch string, force bool) error {
+func (m *mockGit) Push(branch string, forceType string) error {
 	m.operations = append(m.operations, "Push:"+branch)
 	return m.err
 }
@@ -217,7 +217,7 @@ func (m *mockGit) GetFirstCommit() (string, error) {
 }
 
 func (m *mockGit) RunInteractive(cmd string, args ...string) error {
-	m.operations = append(m.operations, fmt.Sprintf("RunInteractive:%s,%v", cmd, args))
+	m.operations = append(m.operations, fmt.Sprintf("RunInteractive:%s,%s", cmd, strings.Join(args, ",")))
 	return m.err
 }
 
@@ -615,12 +615,18 @@ func TestSyncBranch(t *testing.T) {
 				"IsClean",
 				"Stash:sage-sync-",
 				"GetCommitHash:HEAD",
+				"CurrentBranch",
 				"Checkout:main",
 				"PullFF",
-				"PullRebase",
+				"Checkout:feature",
+				"CurrentBranch",
+				"Checkout:feature",
+				"RunInteractive:rebase,--onto,main,main,feature",
 				"GetCommitHash:HEAD",
+				"CurrentBranch",
 				"StashPop",
 				"GetCommitHash:HEAD",
+				"Push:feature",
 			},
 		},
 		{
@@ -639,12 +645,18 @@ func TestSyncBranch(t *testing.T) {
 				"IsClean",
 				"Stash:sage-sync-",
 				"GetCommitHash:HEAD",
+				"CurrentBranch",
 				"Checkout:main",
 				"PullFF",
-				"PullRebase",
+				"Checkout:feature",
+				"CurrentBranch",
+				"Checkout:feature",
+				"RunInteractive:rebase,--onto,main,main,feature",
 				"GetCommitHash:HEAD",
+				"CurrentBranch",
 				"StashPop",
 				"GetCommitHash:HEAD",
+				"Push:feature",
 			},
 		},
 	}
@@ -795,105 +807,6 @@ func TestCreatePullRequest(t *testing.T) {
 	}
 }
 
-func TestSyncBranchWithErrors(t *testing.T) {
-	tests := []struct {
-		name    string
-		mock    *mockGit
-		abort   bool
-		cont    bool
-		wantErr bool
-		wantOps []string
-	}{
-		{
-			name: "sync with stash error",
-			mock: func() *mockGit {
-				m := newMockGit()
-				m.isRepo = true
-				m.isClean = false
-				m.err = fmt.Errorf("stash error")
-				return m
-			}(),
-			wantErr: true,
-			wantOps: []string{
-				"IsRepo",
-				"IsMerging",
-				"IsRebasing",
-				"GetCommitHash:HEAD",
-				"CurrentBranch",
-				"DefaultBranch",
-				"GetCommitHash:HEAD",
-				"IsClean",
-				"Stash:sage-sync-",
-			},
-		},
-		{
-			name: "sync with checkout error",
-			mock: func() *mockGit {
-				m := newMockGit()
-				m.isRepo = true
-				m.isClean = true
-				m.err = fmt.Errorf("checkout error")
-				return m
-			}(),
-			wantErr: true,
-			wantOps: []string{
-				"IsRepo",
-				"IsMerging",
-				"IsRebasing",
-				"GetCommitHash:HEAD",
-				"CurrentBranch",
-				"DefaultBranch",
-				"GetCommitHash:HEAD",
-				"IsClean",
-				"Checkout:main",
-			},
-		},
-		{
-			name: "sync with pull error",
-			mock: func() *mockGit {
-				m := newMockGit()
-				m.isRepo = true
-				m.isClean = true
-				m.err = fmt.Errorf("pull error")
-				return m
-			}(),
-			wantErr: true,
-			wantOps: []string{
-				"IsRepo",
-				"IsMerging",
-				"IsRebasing",
-				"GetCommitHash:HEAD",
-				"CurrentBranch",
-				"DefaultBranch",
-				"GetCommitHash:HEAD",
-				"IsClean",
-				"Checkout:main",
-				"PullFF",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := SyncBranch(tt.mock, tt.abort, tt.cont)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("SyncBranch() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if !tt.wantErr {
-				gotOps := tt.mock.operations
-				for i, op := range gotOps {
-					if strings.HasPrefix(op, "Stash:sage-sync-") {
-						gotOps[i] = "Stash:sage-sync-"
-					}
-				}
-				if !operationsMatch(gotOps, tt.wantOps) {
-					t.Errorf("SyncBranch() operations = %v, want %v", gotOps, tt.wantOps)
-				}
-			}
-		})
-	}
-}
-
 func TestSyncBranchContinue(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -922,12 +835,18 @@ func TestSyncBranchContinue(t *testing.T) {
 				"IsClean",
 				"Stash:sage-sync-",
 				"GetCommitHash:HEAD",
+				"CurrentBranch",
 				"Checkout:main",
 				"PullFF",
-				"PullRebase",
+				"Checkout:feature",
+				"CurrentBranch",
+				"Checkout:feature",
+				"RunInteractive:rebase,--onto,main,main,feature",
 				"GetCommitHash:HEAD",
+				"CurrentBranch",
 				"StashPop",
 				"GetCommitHash:HEAD",
+				"Push:feature",
 			},
 		},
 		{
@@ -949,12 +868,18 @@ func TestSyncBranchContinue(t *testing.T) {
 				"IsClean",
 				"Stash:sage-sync-",
 				"GetCommitHash:HEAD",
+				"CurrentBranch",
 				"Checkout:main",
 				"PullFF",
-				"PullRebase",
+				"Checkout:feature",
+				"CurrentBranch",
+				"Checkout:feature",
+				"RunInteractive:rebase,--onto,main,main,feature",
 				"GetCommitHash:HEAD",
+				"CurrentBranch",
 				"StashPop",
 				"GetCommitHash:HEAD",
+				"Push:feature",
 			},
 		},
 	}

@@ -80,7 +80,7 @@ func (m *MockGit) CurrentBranch() (string, error) {
 func (m *MockGit) Push(branch string, forceType string) error {
 	m.trackCall("Push")
 	if err := validateRef(branch); err != nil {
-		return err
+		return fmt.Errorf("invalid branch name: %w", err)
 	}
 	if _, exists := m.branches[branch]; !exists {
 		return fmt.Errorf("branch %s does not exist", branch)

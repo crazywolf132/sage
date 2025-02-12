@@ -369,7 +369,7 @@ func TestMockGitErrorHandling(t *testing.T) {
 			t.Error("DeleteBranch() should error on non-existent branch")
 		}
 
-		if err := mock.Push("non-existent", false); err == nil {
+		if err := mock.Push("non-existent", ""); err == nil {
 			t.Error("Push() should error on non-existent branch")
 		}
 	})
