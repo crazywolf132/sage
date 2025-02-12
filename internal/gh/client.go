@@ -68,15 +68,17 @@ type TimelineEvent struct {
 
 // UnresolvedThread is a minimal structure for unresolved PR comment threads
 type UnresolvedThread struct {
-	Path     string
-	Line     int
-	Comments []Comment
+	Path        string
+	Line        int
+	Comments    []Comment
+	CodeContext string // The code snippet around the comment
 }
 
 // Comment is a snippet representing a single comment in a thread
 type Comment struct {
 	User string
 	Body string
+	Time time.Time // When the comment was made
 }
 
 // Client interface defines methods for interacting with GitHub
@@ -349,26 +351,34 @@ func (p *pullRequestAPI) ListPRUnresolvedThreads(prNum int) ([]UnresolvedThread,
 		return nil, err
 	}
 	var raw []struct {
-		ID   int    `json:"id"`
-		Body string `json:"body"`
-		Path string `json:"path"`
-		Line int    `json:"line"`
-		User struct {
+		ID        int       `json:"id"`
+		Body      string    `json:"body"`
+		Path      string    `json:"path"`
+		Line      int       `json:"line"`
+		CreatedAt time.Time `json:"created_at"`
+		User      struct {
 			Login string `json:"login"`
 		} `json:"user"`
+		DiffHunk string `json:"diff_hunk"`
 	}
 	if e := json.Unmarshal(data, &raw); e != nil {
 		return nil, e
 	}
 
 	m := make(map[string][]Comment)
+	contexts := make(map[string]string)
 	for _, r := range raw {
 		// assume they're all unresolved
 		key := r.Path + ":" + strconv.Itoa(r.Line)
 		m[key] = append(m[key], Comment{
 			User: r.User.Login,
 			Body: r.Body,
+			Time: r.CreatedAt,
 		})
+		// Store the code context if available
+		if r.DiffHunk != "" {
+			contexts[key] = r.DiffHunk
+		}
 	}
 
 	var results []UnresolvedThread
@@ -380,9 +390,10 @@ func (p *pullRequestAPI) ListPRUnresolvedThreads(prNum int) ([]UnresolvedThread,
 			ln, _ = strconv.Atoi(parts[1])
 		}
 		results = append(results, UnresolvedThread{
-			Path:     pth,
-			Line:     ln,
-			Comments: cList,
+			Path:        pth,
+			Line:        ln,
+			Comments:    cList,
+			CodeContext: contexts[k],
 		})
 	}
 	return results, nil
