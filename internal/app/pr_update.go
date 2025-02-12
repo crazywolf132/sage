@@ -38,7 +38,8 @@ func UpdatePR(ghc gh.Client, g git.Service, num int, opts PRUpdateOptions) error
 		}
 
 		// Initialize AI client
-		client := ai.NewClient("")
+		llm := ai.NewOpenAILLM()
+		client := ai.NewClient(llm)
 
 		// Generate PR title if not explicitly provided
 		if opts.Title == "" {

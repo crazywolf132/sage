@@ -104,9 +104,14 @@ func AskCommitMessage(useConventional bool) (msg string, scope string, ctype str
 	return form.Msg, form.Scope, form.Type, err
 }
 
-// Info prints an informational message
+// Info prints an info message
 func Info(msg string) {
-	fmt.Printf("%s %s\n", Blue("ℹ"), msg)
+	fmt.Printf("%s %s\n", Blue("•"), msg)
+}
+
+// Infof prints a formatted info message
+func Infof(format string, args ...interface{}) {
+	Info(fmt.Sprintf(format, args...))
 }
 
 // Success prints a success message
@@ -114,14 +119,29 @@ func Success(msg string) {
 	fmt.Printf("%s %s\n", Green("✓"), msg)
 }
 
+// Successf prints a formatted success message
+func Successf(format string, args ...interface{}) {
+	Success(fmt.Sprintf(format, args...))
+}
+
 // Warning prints a warning message
 func Warning(msg string) {
-	fmt.Printf("%s %s\n", Yellow("⚠"), msg)
+	fmt.Printf("%s %s\n", Yellow("!"), msg)
+}
+
+// Warningf prints a formatted warning message
+func Warningf(format string, args ...interface{}) {
+	Warning(fmt.Sprintf(format, args...))
 }
 
 // Error prints an error message
 func Error(msg string) {
 	fmt.Printf("%s %s\n", Red("✗"), msg)
+}
+
+// Errorf prints a formatted error message
+func Errorf(format string, args ...interface{}) {
+	Error(fmt.Sprintf(format, args...))
 }
 
 // Confirm asks for user confirmation

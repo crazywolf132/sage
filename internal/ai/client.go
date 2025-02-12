@@ -1,22 +1,19 @@
 package ai
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
 	"strings"
-
-	"github.com/crazywolf132/sage/internal/config"
 )
 
-// Client is used to send requests to an AI provider following the OpenAI Chat API spec.
+// LLM represents a language model interface
+type LLM interface {
+	Complete(ctx context.Context, prompt string) (string, error)
+}
+
+// Client is an AI client that provides various AI-powered features
 type Client struct {
-	BaseURL string
-	APIKey  string
-	Model   string
+	llm LLM
 }
 
 // GenerateRequest matches the minimal payload expected by the Chat API.
@@ -55,44 +52,16 @@ type Usage struct {
 	TotalTokens      int `json:"total_tokens"`
 }
 
-// NewClient creates a new Ollama client.
-func NewClient(baseURL string) *Client {
-	model := config.Get("ai.model", false)
-	if model == "" {
-		model = "gpt-4o"
-	}
-
-	// Use passed baseURL first, then config, then default
-	if baseURL == "" {
-		baseURL = config.Get("ai.base_url", false)
-		if baseURL == "" {
-			baseURL = "https://api.openai.com/v1"
-		}
-	}
-
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
-		apiKey = config.Get("ai.api_key", false)
-	}
-
+// NewClient creates a new AI client with the given LLM
+func NewClient(llm LLM) *Client {
 	return &Client{
-		BaseURL: baseURL,
-		APIKey:  apiKey,
-		Model:   model,
+		llm: llm,
 	}
 }
 
 // GenerateCommitMessage sends the diff and a prompt to the AI provider and returns a commit message.
 func (c *Client) GenerateCommitMessage(diff string) (string, error) {
-	if c.APIKey == "" {
-		return "", fmt.Errorf("API key not found. Set OPENAI_API_KEY environment variable or configure in .sage/config.toml")
-	}
-
-	// OpenAI (or compatible) providers have a maximum allowed content length.
-	const maxAllowed = 1048576
-
-	// Define the static parts of the prompt.
-	staticPrefix := `You are a helpful git commit message generator. Your task is to analyze the following code changes and generate a clear, meaningful commit message that follows the Conventional Commits specification.
+	prompt := fmt.Sprintf(`You are a helpful git commit message generator. Your task is to analyze the following code changes and generate a clear, meaningful commit message that follows the Conventional Commits specification.
 
 Guidelines:
 1. Use one of these types:
@@ -111,106 +80,12 @@ Guidelines:
    - fix: resolve null pointer in data processing
    - ci: update GitHub Actions workflow
 
-3. Analyze the diff carefully:
-   - Look for function/method additions or modifications
-   - Identify bug fixes from error handling changes
-   - Note any test additions or modifications
-   - Consider impact on existing functionality
-   - Changes in .github/workflows/ directory should use 'ci' type
-   - Changes to CI/CD pipeline configurations should use 'ci' type
-
-4. Keep the message:
-   - Concise but informative (ideally under 72 characters)
-   - Focused on WHAT changed and WHY
-   - In imperative mood ("add" not "added")
-   - Without unnecessary technical details
-
 Code changes to analyze:
-`
-	staticSuffix := `
+%s
 
-Respond with ONLY the commit message, no additional text or formatting.`
+Respond with ONLY the commit message, no additional text or formatting.`, diff)
 
-	// Calculate the maximum allowed length for the diff portion.
-	allowedDiffLength := maxAllowed - (len(staticPrefix) + len(staticSuffix))
-	if len(diff) > allowedDiffLength {
-		diff = diff[:allowedDiffLength] + "\n[diff truncated]"
-	}
-
-	// Construct the full prompt.
-	prompt := staticPrefix + diff + staticSuffix
-
-	// Build the request with two messages.
-	reqBody := GenerateRequest{
-		Model: c.Model,
-		Messages: []Message{
-			{
-				Role:    "system",
-				Content: "You are a helpful git commit message generator that follows the Conventional Commits specification.",
-			},
-			{
-				Role:    "user",
-				Content: prompt,
-			},
-		},
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	url := fmt.Sprintf("%s/chat/completions", c.BaseURL)
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if c.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.APIKey)
-	}
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("unexpected status code: %d. Response: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	var genResp GenerateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&genResp); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if len(genResp.Choices) == 0 {
-		return "", fmt.Errorf("no response generated")
-	}
-
-	if genResp.Choices[0].FinishReason != "stop" {
-		return "", fmt.Errorf("incomplete response: %s", genResp.Choices[0].FinishReason)
-	}
-
-	// Assemble the commit message from the response.
-	response := genResp.Choices[0].Message.Content
-	for {
-		start := strings.Index(response, "<")
-		if start == -1 {
-			break
-		}
-		end := strings.Index(response[start:], ">")
-		if end == -1 {
-			break
-		}
-		response = response[:start] + response[start+end+1:]
-	}
-
-	return strings.TrimSpace(response), nil
+	return c.llm.Complete(context.Background(), prompt)
 }
 
 func (c *Client) GeneratePRDescription(commits, diff string) (string, error) {
@@ -258,7 +133,7 @@ Changes:
 
 Generate a PR description following the above structure and guidelines. Use proper markdown formatting.`, commits, diff)
 
-	return c.GenerateCommitMessage(prompt)
+	return c.llm.Complete(context.Background(), prompt)
 }
 
 func (c *Client) GeneratePRLabels(commits, diff string) ([]string, error) {
@@ -280,7 +155,7 @@ Changes:
 
 Return ONLY the exact label names from the list above, separated by commas. Do not add any new labels.`, commits, diff)
 
-	response, err := c.GenerateCommitMessage(prompt)
+	response, err := c.llm.Complete(context.Background(), prompt)
 	if err != nil {
 		return nil, err
 	}
@@ -339,5 +214,5 @@ Changes:
 
 Return only the conventional commit title, no additional text or formatting.`, commits, diff)
 
-	return c.GenerateCommitMessage(prompt)
+	return c.llm.Complete(context.Background(), prompt)
 }

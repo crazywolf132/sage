@@ -109,11 +109,8 @@ func StageFiles(g git.Service, patterns []string, useAI bool) error {
 
 	if useAI {
 		// Initialize AI client
-		client := ai.NewClient("")
-		if client.APIKey == "" {
-			fmt.Printf("%s No OpenAI API key found, falling back to manual selection\n", ui.Yellow("!"))
-			return StageFiles(g, patterns, false)
-		}
+		llm := ai.NewOpenAILLM()
+		client := ai.NewClient(llm)
 
 		// Get the diff for AI analysis
 		var diffBuilder strings.Builder

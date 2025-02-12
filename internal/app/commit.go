@@ -110,18 +110,23 @@ func Commit(g git.Service, opts CommitOptions) (CommitResult, error) {
 			if err != nil {
 				return result, fmt.Errorf("failed to get diff: %w", err)
 			}
-			client := ai.NewClient("")
-			if client.APIKey == "" {
-				return result, fmt.Errorf("AI features require an OpenAI API key")
+			// Initialize AI client
+			llm := ai.NewOpenAILLM()
+			client := ai.NewClient(llm)
+
+			var commitMessage string
+			// Generate commit message if requested
+			if opts.Message == "" {
+				msg, err := client.GenerateCommitMessage(diff)
+				if err != nil {
+					return result, fmt.Errorf("failed to generate commit message: %w", err)
+				}
+				commitMessage = msg
 			}
-			aiMsg, err := client.GenerateCommitMessage(diff)
-			if err != nil {
-				return result, fmt.Errorf("failed to generate AI commit message: %w", err)
-			}
-			fmt.Printf("Generated commit message: %q\n", aiMsg)
+			fmt.Printf("Generated commit message: %q\n", commitMessage)
 			if opts.AutoAccept {
 				// Automatically accept the AI message
-				opts.Message = aiMsg
+				opts.Message = commitMessage
 			} else {
 				// Otherwise, prompt the user.
 				var choice string
@@ -135,7 +140,7 @@ func Commit(g git.Service, opts CommitOptions) (CommitResult, error) {
 
 				switch choice {
 				case "Accept":
-					opts.Message = aiMsg
+					opts.Message = commitMessage
 					break
 				case "Change type":
 					newType := ""
@@ -148,7 +153,7 @@ func Commit(g git.Service, opts CommitOptions) (CommitResult, error) {
 					if err != nil {
 						return result, err
 					}
-					opts.Message = changeCommitType(aiMsg, newType)
+					opts.Message = changeCommitType(commitMessage, newType)
 					break
 				case "Enter manually":
 					msg, scope, ctype, err := ui.AskCommitMessage(opts.UseConventional)
