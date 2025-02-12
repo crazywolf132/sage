@@ -11,7 +11,7 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:           "sage",
-	Short:         "A CLI tool for managing git repositories",
+	Short:         "Burning away Git complexity",
 	Version:       version.Get(),
 	SilenceUsage:  true,
 	SilenceErrors: true,
