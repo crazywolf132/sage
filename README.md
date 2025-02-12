@@ -129,6 +129,42 @@ sage config set pr.reviewers user1,user2  # Default PR reviewers
 sage config set pr.labels feature,docs    # Default PR labels
 ```
 
+### Experimental Features 🧪
+Sage includes experimental features that can enhance your Git workflow. View and manage them with:
+```bash
+sage config experimental
+```
+
+Available experimental features:
+- **Reuse Recorded Resolution (rerere)**: Git remembers how you resolved conflicts and automatically reuses those resolutions.
+  ```bash
+  # Enable globally (all Sage repos)
+  sage config set experimental.rerere true
+  # Enable for current repo only
+  sage config set --local experimental.rerere true
+  ```
+
+- **Commit Graph**: Speeds up git log operations in large repositories by maintaining a commit graph.
+  ```bash
+  sage config set experimental.commit-graph true
+  ```
+
+- **File System Monitor**: Significantly improves `git status` performance by using OS-level file monitoring.
+  ```bash
+  sage config set experimental.fsmonitor true
+  ```
+
+- **Git Auto-Maintenance**: Automatically optimizes repository performance with scheduled maintenance tasks:
+  - Hourly prefetch to keep your repo up-to-date
+  - Automatic loose object cleanup
+  - Daily reference packing
+  - Incremental repack for optimal storage
+  ```bash
+  sage config set experimental.maintenance true
+  ```
+
+These features can be enabled globally (for all Sage repositories) or locally (per repository). Use the `--local` flag with `sage config set` to enable features for just the current repository.
+
 ### Local Storage
 Sage stores its data in `.sage/` in your repository:
 - `undo_history.json`: Operation history for the undo system

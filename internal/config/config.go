@@ -288,3 +288,26 @@ func decryptValue(encrypted string) (string, error) {
 
 	return string(plaintext), nil
 }
+
+// IsExperimentalFeatureEnabled checks if an experimental feature is enabled.
+// It first checks the local config, then falls back to global config.
+// The feature can be enabled by setting experimental.<feature_name>=true
+func IsExperimentalFeatureEnabled(featureName string) bool {
+	configKey := fmt.Sprintf("experimental.%s", featureName)
+
+	// Check local config first
+	g := git.NewShellGit()
+	repo, err := g.IsRepo()
+	if err == nil && repo {
+		if val, ok := localData[configKey]; ok {
+			return strings.ToLower(val) == "true"
+		}
+	}
+
+	// Fall back to global config
+	if val, ok := globalData[configKey]; ok {
+		return strings.ToLower(val) == "true"
+	}
+
+	return false // Default to disabled
+}

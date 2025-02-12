@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/crazywolf132/sage/internal/config"
+	"github.com/crazywolf132/sage/internal/git"
 	"github.com/crazywolf132/sage/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -60,6 +62,7 @@ var configListCmd = &cobra.Command{
 	Short: "List all available configuration properties",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Printf("\n%s\n", ui.Sage("Available Configuration Properties:"))
+		fmt.Printf("%s\n", ui.Gray("Use 'sage config experimental' to view experimental features"))
 
 		// AI Configuration
 		fmt.Printf("\n%s\n", ui.Bold("AI Settings:"))
@@ -113,7 +116,8 @@ var configListCmd = &cobra.Command{
 		fmt.Printf("  Set a value:   %s\n", ui.White("sage config set <key> <value>"))
 		fmt.Printf("  Get a value:   %s\n", ui.White("sage config get <key>"))
 		fmt.Printf("  Remove a value: %s\n", ui.White("sage config unset <key>"))
-		fmt.Printf("  List values:   %s\n\n", ui.White("sage config list"))
+		fmt.Printf("  List values:   %s\n", ui.White("sage config list"))
+		fmt.Printf("  View experimental: %s\n\n", ui.White("sage config experimental"))
 
 		return nil
 	},
@@ -140,12 +144,118 @@ Use --local to remove from the local repository config instead.`,
 	},
 }
 
+var configExperimentalCmd = &cobra.Command{
+	Use:   "experimental",
+	Short: "Show experimental features and their status",
+	Long: `Display all available experimental features and their current status.
+Shows whether each feature is enabled globally or locally, and provides
+information about what each feature does.`,
+	Aliases: []string{"exp", "x"},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		fmt.Printf("\n%s\n", ui.Sage("✨ Experimental Features"))
+		fmt.Printf("%s\n", ui.Gray("Features that are being tested and may change or be removed."))
+		fmt.Println()
+
+		// Check if we're in a git repo
+		g := git.NewShellGit()
+		inRepo, _ := g.IsRepo()
+
+		// Get all experimental features
+		features := config.GetExperimentalFeatures()
+
+		// Calculate the longest feature name for alignment
+		maxLen := 0
+		for name := range features {
+			if len(name) > maxLen {
+				maxLen = len(name)
+			}
+		}
+
+		// Print each feature
+		for name, feature := range features {
+			// Get enabled status (global and local)
+			globalEnabled := config.Get("experimental."+name, false) == "true"
+			localEnabled := inRepo && config.Get("experimental."+name, true) == "true"
+
+			// Feature name
+			fmt.Printf("  %s%s", ui.White(name), strings.Repeat(" ", maxLen-len(name)))
+
+			// Status indicators
+			if feature.SageWide {
+				if globalEnabled {
+					fmt.Printf(" %s", ui.Green("● Enabled (All Sage repos)"))
+				} else if localEnabled {
+					fmt.Printf(" %s", ui.Blue("● Enabled (This repo)"))
+				} else {
+					fmt.Printf(" %s", ui.Gray("○ Disabled"))
+				}
+			} else {
+				if localEnabled {
+					fmt.Printf(" %s", ui.Blue("● Enabled"))
+				} else {
+					fmt.Printf(" %s", ui.Gray("○ Disabled"))
+				}
+			}
+
+			// Feature description
+			fmt.Printf("\n    %s\n", ui.Gray(getFeatureDescription(name)))
+
+			// Git config info
+			if feature.Key != "" {
+				fmt.Printf("    %s %s\n", ui.White("Git Config:"), ui.Gray(feature.Key+"="+feature.Value))
+			}
+
+			// Usage examples
+			if feature.SageWide {
+				fmt.Printf("    %s\n      %s\n      %s\n",
+					ui.White("Usage:"),
+					ui.Gray("sage config set experimental."+name+" true      # Enable for all Sage usage"),
+					ui.Gray("sage config set --local experimental."+name+" true  # Enable for this repo only"))
+			} else {
+				fmt.Printf("    %s\n      %s\n",
+					ui.White("Usage:"),
+					ui.Gray("sage config set --local experimental."+name+" true"))
+			}
+			fmt.Println()
+		}
+
+		return nil
+	},
+}
+
+// getFeatureDescription returns a user-friendly description of an experimental feature
+func getFeatureDescription(name string) string {
+	switch name {
+	case "rerere":
+		return "Reuse Recorded Resolution - Git will remember how you resolved conflicts and automatically reuse those resolutions."
+	case "commit-graph":
+		return "Write commit graph on fetch - Significantly speeds up git log operations and commit traversal in large repositories."
+	case "fsmonitor":
+		return "File System Monitor - Speeds up git status operations by using OS-level file monitoring. Particularly effective in large repositories."
+	case "maintenance":
+		return "Git Auto-Maintenance - Automatically optimizes your repository's performance in the background:\n" +
+			"    • Hourly prefetch: Keeps your repository up-to-date with remote changes\n" +
+			"    • Loose object cleanup: Improves storage efficiency by packing loose objects\n" +
+			"    • Daily reference packing: Organizes references (branches/tags) for faster access\n" +
+			"    • Incremental repack: Maintains optimal repository storage\n" +
+			"    \n" +
+			"    This feature is especially useful for:\n" +
+			"    • Large repositories with many objects\n" +
+			"    • Teams with frequent commits and merges\n" +
+			"    • Repositories with long history\n" +
+			"    • Improving git command response times"
+	default:
+		return "No description available."
+	}
+}
+
 func init() {
 	rootCmd.AddCommand(configCmd)
 	configCmd.AddCommand(configGetCmd)
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configListCmd)
 	configCmd.AddCommand(configUnsetCmd)
+	configCmd.AddCommand(configExperimentalCmd)
 
 	// Add --local flag to get, set, and unset commands
 	configGetCmd.Flags().BoolVarP(&useLocalConfig, "local", "l", false, "Use local repository config")

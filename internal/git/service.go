@@ -1,6 +1,7 @@
 package git
 
 import (
+	"strings"
 	"time"
 )
 
@@ -48,4 +49,28 @@ type Service interface {
 	GetBranchDivergence(branch1, branch2 string) (int, error)
 	GetCommitHash(ref string) (string, error)
 	IsAncestor(commit1, commit2 string) (bool, error)
+	SetConfig(key, value string, global bool) error
+	GetRepoPath() (string, error)
+	Run(args ...string) (string, error)
+}
+
+// SetConfig sets a git config value
+func (g *ShellGit) SetConfig(key, value string, global bool) error {
+	args := []string{"config"}
+	if global {
+		args = append(args, "--global")
+	}
+	args = append(args, key, value)
+
+	_, err := g.run(args...)
+	return err
+}
+
+// GetRepoPath returns the absolute path to the git repository
+func (g *ShellGit) GetRepoPath() (string, error) {
+	out, err := g.run("rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
 }
