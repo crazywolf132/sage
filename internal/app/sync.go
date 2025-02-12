@@ -221,6 +221,13 @@ func performSync(g git.Service, spinner *ui.Spinner) error {
 		ui.Warning("Failed to record rebase operation in undo history")
 	}
 
+	// Ensure we're on the correct branch after rebase
+	if finalBranch, err := g.CurrentBranch(); err == nil && finalBranch != curBranch {
+		if err := g.Checkout(curBranch); err != nil {
+			ui.Warning(fmt.Sprintf("Failed to switch back to %s after rebase", curBranch))
+		}
+	}
+
 	// 5. Pop stash if we stashed changes
 	if result.StashedFiles {
 		spinner.Start("Restoring stashed changes")
@@ -325,19 +332,46 @@ func handleWorkingDirectory(g git.Service) (bool, string, error) {
 }
 
 func updateParentBranch(g git.Service, parentBranch string) error {
+	// Get current branch before switching
+	curBranch, err := g.CurrentBranch()
+	if err != nil {
+		return fmt.Errorf("failed to get current branch: %w", err)
+	}
+
+	// Switch to parent branch
 	if err := g.Checkout(parentBranch); err != nil {
 		return fmt.Errorf("failed to checkout %s: %w", parentBranch, err)
 	}
 
+	// Update parent branch
 	if err := g.PullFF(); err != nil {
+		// Switch back to original branch before returning error
+		_ = g.Checkout(curBranch)
 		return fmt.Errorf("failed to update %s: %w", parentBranch, err)
+	}
+
+	// Switch back to original branch
+	if err := g.Checkout(curBranch); err != nil {
+		return fmt.Errorf("failed to checkout %s: %w", curBranch, err)
 	}
 
 	return nil
 }
 
 func rebaseBranch(g git.Service, parentBranch string) error {
-	if err := g.PullRebase(); err != nil {
+	// Get current branch
+	curBranch, err := g.CurrentBranch()
+	if err != nil {
+		return fmt.Errorf("failed to get current branch: %w", err)
+	}
+
+	// Make sure we're on our feature branch
+	if err := g.Checkout(curBranch); err != nil {
+		return fmt.Errorf("failed to checkout %s: %w", curBranch, err)
+	}
+
+	// Rebase current branch onto parent branch using the full command
+	if err := g.RunInteractive("rebase", "--onto", parentBranch, parentBranch, curBranch); err != nil {
 		return fmt.Errorf("failed to rebase onto %s: %w", parentBranch, err)
 	}
 
