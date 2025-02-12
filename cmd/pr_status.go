@@ -152,7 +152,9 @@ func printPRStatus(pr *gh.PullRequest) {
 		fmt.Printf("\n%s\n", ui.Sage("Recent Commits:"))
 		for _, event := range pr.Timeline {
 			if event.Event == "committed" {
-				timestamp := event.CreatedAt.Format(time.RFC822)
+				// Convert UTC time to local timezone
+				localTime := event.CreatedAt.Local()
+				timestamp := localTime.Format(time.RFC822)
 				// Get first line of commit message
 				message := strings.Split(event.Message, "\n")[0]
 				fmt.Printf("  %s: %s (%s) by @%s\n",
