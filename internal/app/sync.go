@@ -243,6 +243,14 @@ func performSync(g git.Service, spinner *ui.Spinner) error {
 		}
 	}
 
+	// 6. Push changes to remote
+	spinner.Start(fmt.Sprintf("Pushing changes to remote"))
+	if err := g.Push(curBranch, false); err != nil {
+		spinner.StopFail()
+		return fmt.Errorf("failed to push changes: %w", err)
+	}
+	spinner.StopSuccess()
+
 	return nil
 }
 
