@@ -308,21 +308,63 @@ func (p *pullRequestAPI) ListPRUnresolvedThreads(prNum int) ([]UnresolvedThread,
 }
 
 func (p *pullRequestAPI) GetPRTemplate() (string, error) {
-	// We can attempt to read from .github/PULL_REQUEST_TEMPLATE.md or other
-	// For a minimal approach, let's do an API call to /repos/:owner/:repo/contents/.github/PULL_REQUEST_TEMPLATE.md
+	// Try multiple locations and formats for PR templates
 	filesToCheck := []string{
-		".github/PULL_REQUEST_TEMPLATE.md",
 		".github/pull_request_template.md",
+		".github/PULL_REQUEST_TEMPLATE.md",
+		".github/pull_request_template",
+		".github/PULL_REQUEST_TEMPLATE",
+		"docs/pull_request_template.md",
 		"docs/PULL_REQUEST_TEMPLATE.md",
+		".github/PULL_REQUEST_TEMPLATE/", // Directory-based templates
+		"pull_request_template.md",
 		"PULL_REQUEST_TEMPLATE.md",
 	}
+
+	// First try the directory-based template approach
+	dirContent, err := p.getDirectoryContent(".github/PULL_REQUEST_TEMPLATE")
+	if err == nil && len(dirContent) > 0 {
+		// Use the first template found in the directory
+		for _, file := range dirContent {
+			if strings.HasSuffix(strings.ToLower(file.Name), ".md") {
+				content, err := p.getContentFile(file.Path)
+				if err == nil && content != "" {
+					return content, nil
+				}
+			}
+		}
+	}
+
+	// Then try individual files
 	for _, f := range filesToCheck {
 		content, err := p.getContentFile(f)
 		if err == nil && content != "" {
 			return content, nil
 		}
 	}
+
 	return "", nil
+}
+
+func (p *pullRequestAPI) getDirectoryContent(path string) ([]struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/contents/%s", baseURL, p.owner, p.repo, path)
+	data, err := p.do("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var files []struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal(data, &files); err != nil {
+		return nil, err
+	}
+
+	return files, nil
 }
 
 func (p *pullRequestAPI) getContentFile(path string) (string, error) {
