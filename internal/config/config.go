@@ -25,33 +25,43 @@ var (
 
 // LoadAllConfigs reads the global + local config and merges them.
 func LoadAllConfigs() error {
+	// Clear existing data
+	globalData = map[string]string{}
+	localData = map[string]string{}
+
+	// Load global config first
 	if err := loadGlobalConfig(); err != nil {
-		return err
+		return fmt.Errorf("failed to load global config: %w", err)
 	}
-	// if inside a repo, load local
-	g := git.NewShellGit()
-	repo, err := g.IsRepo()
-	if err == nil && repo {
-		_ = loadLocalConfig() // if fails, ignore
+
+	// Try to load local config if we're in a Git repo
+	err := loadLocalConfig()
+	if err != nil {
+		// Ignore "not in git repository" and "file not found" errors
+		if !os.IsNotExist(err) && err.Error() != "not in a git repository" {
+			return fmt.Errorf("failed to load local config: %w", err)
+		}
+		// If not in a repo or no local config, that's fine - just use an empty map
+		localData = map[string]string{}
 	}
+
 	return nil
 }
 
 func Get(key string, useLocal bool) string {
-	// If useLocal is true and we're in a repo, check local first
+	// If useLocal is true, check local first
 	if useLocal {
-		g := git.NewShellGit()
-		repo, err := g.IsRepo()
-		if err == nil && repo {
-			if val, ok := localData[key]; ok {
-				return val
-			}
+		// Check local data first
+		if val, ok := localData[key]; ok {
+			return val
 		}
 	}
-	// Otherwise check global
+
+	// Check global data
 	if val, ok := globalData[key]; ok {
 		return val
 	}
+
 	return ""
 }
 
@@ -181,14 +191,30 @@ func localPath() string {
 }
 
 func loadLocalConfig() error {
-	b, err := os.ReadFile(localPath())
-	if err != nil {
+	// Check if we're in a Git repo first
+	g := git.NewShellGit()
+	repo, err := g.IsRepo()
+	if err != nil || !repo {
+		return fmt.Errorf("not in a git repository")
+	}
+
+	// Check if local config file exists
+	path := localPath()
+	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return err
 	}
+
+	// Read and parse the file
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read local config: %w", err)
+	}
+
 	tmp := map[string]string{}
 	if err := toml.Unmarshal(b, &tmp); err != nil {
-		return err
+		return fmt.Errorf("failed to parse local config: %w", err)
 	}
+
 	localData = tmp
 	return nil
 }
