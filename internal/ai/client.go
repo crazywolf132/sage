@@ -102,19 +102,22 @@ Guidelines:
    - style: Code style changes (formatting, missing semi-colons, etc)
    - refactor: Code changes that neither fix a bug nor add a feature
    - test: Adding or modifying tests
+   - ci: Changes to CI/CD configuration and scripts
    - chore: Changes to build process or auxiliary tools
 
 2. Format: <type>: <description>
    Examples:
    - feat: add user authentication system
    - fix: resolve null pointer in data processing
-   - refactor: simplify error handling in API calls
+   - ci: update GitHub Actions workflow
 
 3. Analyze the diff carefully:
    - Look for function/method additions or modifications
    - Identify bug fixes from error handling changes
    - Note any test additions or modifications
    - Consider impact on existing functionality
+   - Changes in .github/workflows/ directory should use 'ci' type
+   - Changes to CI/CD pipeline configurations should use 'ci' type
 
 4. Keep the message:
    - Concise but informative (ideally under 72 characters)
