@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/crazywolf132/sage/internal/ai"
+	"github.com/crazywolf132/sage/internal/config"
 	"github.com/crazywolf132/sage/internal/gh"
 	"github.com/crazywolf132/sage/internal/git"
 )
@@ -38,7 +39,10 @@ func UpdatePR(ghc gh.Client, g git.Service, num int, opts PRUpdateOptions) error
 		}
 
 		// Initialize AI client
-		client := ai.NewClient("")
+		client := ai.NewClient(config.Get("ai_base_url", false))
+		if client.APIKey == "" {
+			return fmt.Errorf("AI API key not configured. Please set it using 'sage config set ai_api_key YOUR_KEY'")
+		}
 
 		// Generate PR title if not explicitly provided
 		if opts.Title == "" {

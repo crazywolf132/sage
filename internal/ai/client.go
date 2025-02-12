@@ -213,42 +213,49 @@ Respond with ONLY the commit message, no additional text or formatting.`
 	return strings.TrimSpace(response), nil
 }
 
+// GeneratePRDescription sends the diff and commits to generate a PR description
 func (c *Client) GeneratePRDescription(commits, diff string) (string, error) {
+	if c.APIKey == "" {
+		return "", fmt.Errorf("API key not found. Set OPENAI_API_KEY environment variable or configure in .sage/config.toml")
+	}
+
 	prompt := fmt.Sprintf(`You are a technical writer creating a comprehensive pull request description. Analyze the following commits and code changes to create a detailed, well-structured PR description.
 
 Guidelines:
 1. Structure the description with these sections:
    ## Summary
-   - High-level overview of the changes
-   - The problem being solved or feature being added
+   - A clear, concise overview of the main changes (2-3 sentences)
+   - Focus on the WHAT and WHY, not the how
+   - Use business/feature-oriented language, not technical details
    
-   ## Implementation Details
-   - Key technical changes and design decisions
-   - Important code changes or new components
-   - Any dependencies added or modified
+   ## Changes
+   - Group changes by type (e.g., Features, Bug Fixes, Refactoring)
+   - Use bullet points for better readability
+   - Include relevant technical details but stay concise
+   - Highlight important architectural decisions or trade-offs
    
    ## Testing
-   - How the changes were tested
-   - Any new tests added
-   - Areas that need careful review/testing
+   - List specific test cases added/modified
+   - Describe manual testing performed
+   - Note areas that need careful review
    
    ## Breaking Changes
-   - List any breaking changes (if applicable)
-   - Migration steps (if needed)
-   
-   ## Related Issues
-   - Reference any related issues or tickets (if apparent from commits)
+   - Only include if there are breaking changes
+   - Clearly explain what breaks and why
+   - Provide migration steps if applicable
 
-2. Focus on:
-   - The WHY behind the changes
-   - Key technical decisions
-   - Impact on the codebase
-   - Areas that need reviewer attention
+2. Writing Style:
+   - Use clear, professional language
+   - Be concise but informative
+   - Use active voice
+   - Keep technical jargon to a minimum unless necessary
+   - Use proper markdown formatting
 
-3. Format:
-   - Use clear markdown formatting
-   - Keep sections concise but informative
-   - Use bullet points for better readability
+3. Focus on:
+   - Impact and value of the changes
+   - Key technical decisions and their rationale
+   - Potential risks or areas needing attention
+   - User-facing changes (if any)
 
 Commits:
 %s
@@ -258,7 +265,75 @@ Changes:
 
 Generate a PR description following the above structure and guidelines. Use proper markdown formatting.`, commits, diff)
 
-	return c.GenerateCommitMessage(prompt)
+	// Build the request
+	reqBody := GenerateRequest{
+		Model: c.Model,
+		Messages: []Message{
+			{
+				Role:    "system",
+				Content: "You are a technical writer that creates clear, comprehensive pull request descriptions. Focus on clarity, completeness, and proper structure.",
+			},
+			{
+				Role:    "user",
+				Content: prompt,
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/chat/completions", c.BaseURL)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if c.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("unexpected status code: %d. Response: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var genResp GenerateResponse
+	if err := json.NewDecoder(resp.Body).Decode(&genResp); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if len(genResp.Choices) == 0 {
+		return "", fmt.Errorf("no response generated")
+	}
+
+	if genResp.Choices[0].FinishReason != "stop" {
+		return "", fmt.Errorf("incomplete response: %s", genResp.Choices[0].FinishReason)
+	}
+
+	// Get the generated description
+	description := genResp.Choices[0].Message.Content
+
+	// Clean up any potential HTML-like tags
+	description = strings.ReplaceAll(description, "<", "\\<")
+	description = strings.ReplaceAll(description, ">", "\\>")
+
+	// Ensure proper markdown formatting
+	if !strings.HasPrefix(description, "## Summary") {
+		description = "## Summary\n" + description
+	}
+
+	return strings.TrimSpace(description), nil
 }
 
 func (c *Client) GeneratePRLabels(commits, diff string) ([]string, error) {

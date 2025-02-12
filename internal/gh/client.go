@@ -98,6 +98,12 @@ type Client interface {
 	UpdatePR(num int, pr *PullRequest) error
 }
 
+// TokenSource represents where the GitHub token was obtained from
+type TokenSource struct {
+	Token  string
+	Source string
+}
+
 func (p *pullRequestAPI) do(method, url string, body any) ([]byte, error) {
 	var buf io.Reader
 	if body != nil {
@@ -555,29 +561,75 @@ func (p *pullRequestAPI) GetLatestRelease() (string, error) {
 
 // NewClient creates a new GitHub client
 func NewClient() Client {
-	// Get owner and repo from git remote
 	owner, repo := getOwnerAndRepo()
-	token := getToken()
+	if owner == "" || repo == "" {
+		panic("Could not determine GitHub repository. Please ensure you have a valid git remote or set SAGE_GITHUB_OWNER and SAGE_GITHUB_REPO environment variables")
+	}
+
+	tokenSource := getToken()
+	if tokenSource.Token == "" {
+		panic(`GitHub token not found. Please either:
+1. Set SAGE_GITHUB_TOKEN environment variable
+2. Set GITHUB_TOKEN environment variable
+3. Login with 'gh auth login' to use GitHub CLI authentication
+	 `)
+	}
 
 	return &pullRequestAPI{
 		owner:  owner,
 		repo:   repo,
-		token:  token,
+		token:  tokenSource.Token,
 		client: &http.Client{},
 	}
 }
 
-// getToken returns the GitHub token from environment variables
-func getToken() string {
+// getToken returns the GitHub token from various sources
+func getToken() TokenSource {
+	// Try environment variables first
 	token := os.Getenv("SAGE_GITHUB_TOKEN")
-	if token == "" {
-		token = os.Getenv("GITHUB_TOKEN")
+	if token != "" {
+		return TokenSource{Token: token, Source: "SAGE_GITHUB_TOKEN environment variable"}
 	}
-	return token
+
+	token = os.Getenv("GITHUB_TOKEN")
+	if token != "" {
+		return TokenSource{Token: token, Source: "GITHUB_TOKEN environment variable"}
+	}
+
+	// Try to get token from gh CLI
+	ghToken, err := getGHCliToken()
+	if err == nil && ghToken != "" {
+		return TokenSource{Token: ghToken, Source: "GitHub CLI"}
+	}
+
+	return TokenSource{}
+}
+
+// getGHCliToken attempts to get the GitHub token from the gh CLI configuration
+func getGHCliToken() (string, error) {
+	// Try to get token using gh CLI
+	cmd := exec.Command("gh", "auth", "token")
+	output, err := cmd.Output()
+	if err == nil {
+		token := strings.TrimSpace(string(output))
+		if token != "" {
+			return token, nil
+		}
+	}
+
+	return "", fmt.Errorf("no token found in gh CLI config")
 }
 
 // getOwnerAndRepo extracts the owner and repo from the git remote URL
 func getOwnerAndRepo() (string, string) {
+	// Try environment variables first
+	owner := os.Getenv("SAGE_GITHUB_OWNER")
+	repo := os.Getenv("SAGE_GITHUB_REPO")
+	if owner != "" && repo != "" {
+		return owner, repo
+	}
+
+	// Fall back to git remote
 	cmd := exec.Command("git", "remote", "get-url", "origin")
 	out, err := cmd.Output()
 	if err != nil {
