@@ -20,20 +20,46 @@ type PRForm struct {
 
 // truncateBody returns a truncated version of the body text suitable for preview
 func truncateBody(body string, maxLines int, maxLineLength int) string {
-	lines := strings.Split(body, "\n")
-	if len(lines) > maxLines {
-		lines = lines[:maxLines]
-		lines = append(lines, "...")
+	if body == "" {
+		return ""
 	}
 
-	// Truncate each line if too long
-	for i, line := range lines {
-		if len(line) > maxLineLength {
-			lines[i] = line[:maxLineLength] + "..."
+	lines := strings.Split(body, "\n")
+
+	// Keep section headers and a few lines after each
+	var truncated []string
+	inSection := false
+	linesAfterHeader := 0
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "##") {
+			inSection = true
+			linesAfterHeader = 0
+			truncated = append(truncated, line)
+			continue
+		}
+
+		if inSection {
+			if linesAfterHeader < 3 && line != "" { // Show up to 3 non-empty lines per section
+				if len(line) > maxLineLength {
+					truncated = append(truncated, line[:maxLineLength]+"...")
+				} else {
+					truncated = append(truncated, line)
+				}
+				linesAfterHeader++
+			} else if linesAfterHeader == 3 {
+				truncated = append(truncated, "...")
+				inSection = false
+			}
 		}
 	}
 
-	return strings.Join(lines, "\n")
+	if len(truncated) > maxLines {
+		truncated = truncated[:maxLines]
+		truncated = append(truncated, "...")
+	}
+
+	return strings.Join(truncated, "\n")
 }
 
 // AskPRForm uses Survey to gather the user's input
@@ -46,10 +72,14 @@ func AskPRForm(initial PRForm, ghc gh.Client) (PRForm, error) {
 		tmpl, err := ghc.GetPRTemplate()
 		if err == nil && tmpl != "" {
 			// Show preview of the template that will be used
-			preview := truncateBody(tmpl, 5, 80)
+			preview := truncateBody(tmpl, 10, 80)
 			fmt.Printf("\nUsing PR Template:\n%s\n\n", preview)
 			form.Body = tmpl
 		}
+	} else {
+		// Show preview of existing body (e.g., from AI generation)
+		preview := truncateBody(form.Body, 15, 100)
+		fmt.Printf("\nProposed PR Description:\n%s\n\n", preview)
 	}
 
 	qs := []*survey.Question{
@@ -67,8 +97,8 @@ func AskPRForm(initial PRForm, ghc gh.Client) (PRForm, error) {
 				Message:       "Pull Request Description (body):",
 				FileName:      "*.md",
 				Default:       form.Body,
-				AppendDefault: true,  // This ensures the template is included
-				HideDefault:   false, // Show the template in the editor
+				AppendDefault: true,
+				HideDefault:   false,
 			},
 		},
 		{
