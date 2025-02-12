@@ -42,6 +42,13 @@ func GetRepoStatus(g git.Service) (*RepoStatus, error) {
 			}
 			code := ln[:2]
 			path := strings.TrimSpace(ln[3:])
+
+			// Handle renamed files
+			if strings.Contains(path, " -> ") {
+				parts := strings.Split(path, " -> ")
+				path = parts[1] // Use the new path
+			}
+
 			symbol, desc := interpretStatus(code)
 			changes = append(changes, FileChange{
 				Symbol:      symbol,
@@ -54,15 +61,23 @@ func GetRepoStatus(g git.Service) (*RepoStatus, error) {
 }
 
 func interpretStatus(code string) (string, string) {
+	// First character represents staging area
+	// Second character represents working tree
 	switch code {
-	case "M ", " M":
+	case "M ":
+		return "M", "Staged Modified"
+	case " M":
 		return "M", "Modified"
-	case "A ", "AM":
-		return "A", "Added"
-	case "D ", " D":
+	case "A ":
+		return "A", "Staged Added"
+	case "AM":
+		return "M", "Staged Added, with modifications"
+	case "D ":
+		return "D", "Staged Deleted"
+	case " D":
 		return "D", "Deleted"
 	case "R ":
-		return "R", "Renamed"
+		return "R", "Staged Renamed"
 	case "??":
 		return "?", "Untracked"
 	default:
