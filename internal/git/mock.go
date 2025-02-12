@@ -77,7 +77,7 @@ func (m *MockGit) CurrentBranch() (string, error) {
 }
 
 // Push implements Service.Push
-func (m *MockGit) Push(branch string, force bool) error {
+func (m *MockGit) Push(branch string, forceType string) error {
 	m.trackCall("Push")
 	if err := validateRef(branch); err != nil {
 		return err

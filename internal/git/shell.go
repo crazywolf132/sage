@@ -143,15 +143,18 @@ func (s *ShellGit) Commit(msg string, allowEmpty bool, stageAll bool) error {
 }
 
 // Push pushes the specified branch to the remote repository
-// If force is true, performs a force push
-func (s *ShellGit) Push(branch string, force bool) error {
+// forceType can be: "", "force", or "force-with-lease"
+func (s *ShellGit) Push(branch string, forceType string) error {
 	if err := validateRef(branch); err != nil {
 		return fmt.Errorf("invalid branch name: %w", err)
 	}
 
 	args := []string{"push", "origin", branch}
-	if force {
+	switch forceType {
+	case "force":
 		args = []string{"push", "--force", "origin", branch}
+	case "force-with-lease":
+		args = []string{"push", "--force-with-lease", "origin", branch}
 	}
 	_, err := s.run(args...)
 	return err

@@ -15,5 +15,9 @@ func PushCurrentBranch(g git.Service, force bool) error {
 	if err != nil {
 		return err
 	}
-	return g.Push(br, force)
+	forceType := ""
+	if force {
+		forceType = "force"
+	}
+	return g.Push(br, forceType)
 }

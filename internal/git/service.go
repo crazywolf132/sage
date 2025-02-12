@@ -12,7 +12,7 @@ type Service interface {
 	IsPathStaged(path string) (bool, error)
 	Commit(msg string, allowEmpty bool, stageAll bool) error
 	CurrentBranch() (string, error)
-	Push(branch string, force bool) error
+	Push(branch string, forceType string) error
 	GetDiff() (string, error)
 	DefaultBranch() (string, error)
 	MergedBranches(base string) ([]string, error)
