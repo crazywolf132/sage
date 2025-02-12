@@ -72,6 +72,10 @@ func handleAbort(g git.Service) SyncResult {
 				Message: fmt.Sprintf("Failed to abort merge: %v", err),
 			}
 		}
+		// Record the abort operation
+		if err := RecordOperation(g, "merge", "Aborted merge", "git merge --abort", "merge", nil, "", "", false, ""); err != nil {
+			ui.Warning("Failed to record merge abort in undo history")
+		}
 		return SyncResult{
 			Success: true,
 			Message: "Successfully aborted merge",
@@ -83,6 +87,10 @@ func handleAbort(g git.Service) SyncResult {
 				Success: false,
 				Message: fmt.Sprintf("Failed to abort rebase: %v", err),
 			}
+		}
+		// Record the abort operation
+		if err := RecordOperation(g, "rebase", "Aborted rebase", "git rebase --abort", "rebase", nil, "", "", false, ""); err != nil {
+			ui.Warning("Failed to record rebase abort in undo history")
 		}
 		return SyncResult{
 			Success: true,
@@ -116,6 +124,10 @@ func handleContinue(g git.Service) SyncResult {
 				Conflicts:   strings.Split(conflicts, "\n"),
 			}
 		}
+		// Record the continue operation
+		if err := RecordOperation(g, "merge", "Continued merge", "git merge --continue", "merge", nil, "", "", false, ""); err != nil {
+			ui.Warning("Failed to record merge continue in undo history")
+		}
 		return SyncResult{
 			Success: true,
 			Message: "Successfully continued merge: " + strings.TrimSpace(out),
@@ -134,6 +146,10 @@ func handleContinue(g git.Service) SyncResult {
 				Conflicts:   strings.Split(conflicts, "\n"),
 			}
 		}
+		// Record the continue operation
+		if err := RecordOperation(g, "rebase", "Continued rebase", "git rebase --continue", "rebase", nil, "", "", false, ""); err != nil {
+			ui.Warning("Failed to record rebase continue in undo history")
+		}
 		return SyncResult{
 			Success: true,
 			Message: "Successfully continued rebase: " + strings.TrimSpace(out),
@@ -147,7 +163,8 @@ func handleContinue(g git.Service) SyncResult {
 }
 
 func performSync(g git.Service, spinner *ui.Spinner) error {
-	var backupBranch string
+	var result SyncResult
+	result.StartTime = time.Now()
 
 	// 1. Get branch information
 	spinner.Start("Getting branch information")
@@ -163,6 +180,7 @@ func performSync(g git.Service, spinner *ui.Spinner) error {
 	if err != nil {
 		ui.Warning("Could not save original ref for backup")
 	}
+	result.OriginalRef = origRef
 
 	// 2. Stash changes if needed
 	spinner.Start("Checking working directory")
@@ -171,300 +189,57 @@ func performSync(g git.Service, spinner *ui.Spinner) error {
 		spinner.StopFail()
 		return err
 	}
+	result.StashedFiles = stashed
+	result.StashRef = stashRef
 	spinner.StopSuccess()
 
-	// 3. Create backup branch if we have the original ref
-	if origRef != "" {
-		backupBranch = fmt.Sprintf("%s-backup-%s", curBranch, time.Now().Format("20060102-150405"))
-		if err := g.CreateBranch(backupBranch); err != nil {
-			ui.Warning(fmt.Sprintf("Could not create backup branch %s", backupBranch))
-			backupBranch = ""
-		} else {
-			ui.Info(fmt.Sprintf("Created backup branch: %s", backupBranch))
-		}
-	}
-
-	// Defer cleanup of backup branch
-	defer func() {
-		if backupBranch != "" {
-			// Only clean up if sync was successful (no error returned)
-			if err == nil {
-				spinner.Start(fmt.Sprintf("Cleaning up backup branch %s", backupBranch))
-				if err := g.DeleteBranch(backupBranch); err != nil {
-					spinner.StopFail()
-					ui.Warning(fmt.Sprintf("Could not delete backup branch %s: %v", backupBranch, err))
-				} else {
-					spinner.StopSuccess()
-					ui.Info(fmt.Sprintf("Deleted backup branch: %s", backupBranch))
-				}
-			} else {
-				ui.Info(fmt.Sprintf("Keeping backup branch for recovery: %s", backupBranch))
-			}
-		}
-	}()
-
-	// 4. Fetch remote changes
-	spinner.Start("Fetching remote changes")
-	if err := g.FetchAll(); err != nil {
-		spinner.StopFail()
-		return fmt.Errorf("failed to fetch remotes: %w", err)
-	}
-	spinner.StopSuccess()
-
-	// 5. Check remote status
-	spinner.Start("Checking remote status")
-	if diverged, err := hasRemoteDiverged(g, curBranch); err != nil {
-		ui.Warning("Could not check remote branch status")
-	} else if diverged {
-		spinner.StopFail()
-		return fmt.Errorf("remote branch has diverged. Use 'git pull' first or use --force to overwrite")
-	}
-	spinner.StopSuccess()
-
-	// 6. Handle sync based on branch type
-	if curBranch == parentBranch {
-		err = syncDefaultBranch(g, spinner, parentBranch, stashed, stashRef)
-	} else {
-		err = syncFeatureBranch(g, spinner, curBranch, parentBranch, stashed, stashRef)
-	}
-
-	return err
-}
-
-func getBranchInfo(g git.Service) (current, parent string, err error) {
-	current, err = g.CurrentBranch()
-	if err != nil {
-		return "", "", fmt.Errorf("failed to get current branch: %w", err)
-	}
-
-	parent, err = g.DefaultBranch()
-	if err != nil || parent == "" {
-		parent = "main"
-	}
-
-	return current, parent, nil
-}
-
-func handleWorkingDirectory(g git.Service) (stashed bool, stashRef string, err error) {
-	clean, err := g.IsClean()
-	if err != nil {
-		return false, "", fmt.Errorf("failed to check working directory: %w", err)
-	}
-
-	if !clean {
-		// Generate unique stash reference
-		stashRef = fmt.Sprintf("sage-sync-%s", time.Now().Format("20060102-150405"))
-
-		// Create specific stash for this sync
-		if err := g.Stash(stashRef); err != nil {
-			return false, "", fmt.Errorf("failed to stash changes: %w", err)
-		}
-
-		// Verify stash was created
-		stashes, err := g.StashList()
-		if err != nil || len(stashes) == 0 {
-			return false, "", fmt.Errorf("failed to verify stash creation: %w", err)
-		}
-
-		return true, stashRef, nil
-	}
-
-	return false, "", nil
-}
-
-func hasRemoteDiverged(g git.Service, branch string) (bool, error) {
-	// Get local and remote refs
-	localRef, err := g.GetCommitHash("HEAD")
-	if err != nil {
-		return false, err
-	}
-
-	remoteRef, err := g.GetCommitHash("origin/" + branch)
-	if err != nil {
-		// If remote ref doesn't exist, it hasn't diverged
-		if strings.Contains(err.Error(), "no such ref") {
-			return false, nil
-		}
-		return false, err
-	}
-
-	// Check if remote contains commits we don't have
-	contained, err := g.IsAncestor(localRef, remoteRef)
-	if err != nil {
-		return false, err
-	}
-
-	return !contained, nil
-}
-
-func syncDefaultBranch(g git.Service, spinner *ui.Spinner, branch string, stashed bool, stashRef string) error {
-	spinner.Start(fmt.Sprintf("Updating %s branch", branch))
-	if err := g.PullRebase(); err != nil {
-		spinner.StopFail()
-		return fmt.Errorf("failed to update branch %q: %w", branch, err)
-	}
-	spinner.StopSuccess()
-
+	// Record stash operation if changes were stashed
 	if stashed {
-		return restoreStashedChanges(g, spinner, stashRef)
+		if err := RecordOperation(g, "stash", "Stashed changes", "git stash", "stash", nil, curBranch, "", true, stashRef); err != nil {
+			ui.Warning("Failed to record stash operation in undo history")
+		}
 	}
-	return nil
-}
 
-func syncFeatureBranch(g git.Service, spinner *ui.Spinner, current, parent string, stashed bool, stashRef string) error {
-	// 1. Update parent branch
-	spinner.Start(fmt.Sprintf("Updating %s branch", parent))
-	if err := updateParentBranch(g, parent); err != nil {
+	// 3. Update parent branch
+	spinner.Start(fmt.Sprintf("Updating %s", parentBranch))
+	if err := updateParentBranch(g, parentBranch); err != nil {
 		spinner.StopFail()
-		return err
+		return handleSyncError(g, err, &result)
 	}
 	spinner.StopSuccess()
 
-	// 2. Switch back and rebase
-	spinner.Start(fmt.Sprintf("Rebasing %s onto %s", current, parent))
-	if err := rebaseOntoBranch(g, current, parent); err != nil {
+	// 4. Rebase current branch
+	spinner.Start(fmt.Sprintf("Rebasing %s onto %s", curBranch, parentBranch))
+	if err := rebaseBranch(g, parentBranch); err != nil {
 		spinner.StopFail()
-		if syncErr, ok := err.(*SyncError); ok {
-			return handleConflicts(g, syncErr.Conflicts)
-		}
-		return err
+		return handleSyncError(g, err, &result)
 	}
 	spinner.StopSuccess()
 
-	// 3. Push changes
-	spinner.Start("Pushing changes")
-	if err := g.Push(current, false); err != nil {
-		spinner.StopFail()
-		return handlePushError(err, current)
+	// Record rebase operation
+	if err := RecordOperation(g, "rebase", fmt.Sprintf("Rebased %s onto %s", curBranch, parentBranch), "git rebase", "rebase", nil, curBranch, "", stashed, stashRef); err != nil {
+		ui.Warning("Failed to record rebase operation in undo history")
 	}
-	spinner.StopSuccess()
 
-	// 4. Restore stashed changes if any
-	if stashed {
-		return restoreStashedChanges(g, spinner, stashRef)
+	// 5. Pop stash if we stashed changes
+	if result.StashedFiles {
+		spinner.Start("Restoring stashed changes")
+		if err := g.StashPop(); err != nil {
+			spinner.StopFail()
+			return handleSyncError(g, err, &result)
+		}
+		spinner.StopSuccess()
+
+		// Record stash pop operation
+		if err := RecordOperation(g, "stash", "Restored stashed changes", "git stash pop", "stash", nil, curBranch, "", false, ""); err != nil {
+			ui.Warning("Failed to record stash pop operation in undo history")
+		}
 	}
+
 	return nil
 }
 
-func updateParentBranch(g git.Service, parent string) error {
-	if err := g.Checkout(parent); err != nil {
-		return fmt.Errorf("failed to checkout %q: %w", parent, err)
-	}
-
-	// Use simple pull for default branch - it's safer and more predictable
-	if err := g.Pull(); err != nil {
-		return fmt.Errorf("failed to update %q: %w", parent, err)
-	}
-	return nil
-}
-
-func rebaseOntoBranch(g git.Service, current, parent string) error {
-	if err := g.Checkout(current); err != nil {
-		return fmt.Errorf("failed to checkout %q: %w", current, err)
-	}
-
-	// First, check if merge would be cleaner than rebase
-	conflicts, err := g.GetBranchMergeConflicts(current)
-	if err == nil && conflicts > 0 {
-		// If we detect potential conflicts, try merge instead
-		if err := g.Merge(parent); err != nil {
-			sg, ok := g.(*git.ShellGit)
-			if !ok {
-				return fmt.Errorf("merge failed: %w", err)
-			}
-
-			conflicts, _ := sg.ListConflictedFiles()
-			return &SyncError{
-				Type:      "conflict",
-				Message:   "Merge conflicts detected",
-				Conflicts: strings.Split(conflicts, "\n"),
-			}
-		}
-		return nil
-	}
-
-	// Check how diverged the branches are
-	divergeCount, err := g.GetBranchDivergence(current, parent)
-	if err == nil && divergeCount > 10 {
-		// If branches have diverged significantly, prefer merge
-		if err := g.Merge(parent); err != nil {
-			sg, ok := g.(*git.ShellGit)
-			if !ok {
-				return fmt.Errorf("merge failed: %w", err)
-			}
-
-			conflicts, _ := sg.ListConflictedFiles()
-			return &SyncError{
-				Type:      "conflict",
-				Message:   "Merge conflicts detected",
-				Conflicts: strings.Split(conflicts, "\n"),
-			}
-		}
-		return nil
-	}
-
-	// For simple cases or when merge analysis fails, try rebase
-	if err := g.RunInteractive("rebase", parent); err != nil {
-		sg, ok := g.(*git.ShellGit)
-		if !ok {
-			return fmt.Errorf("rebase failed: %w", err)
-		}
-
-		conflicts, _ := sg.ListConflictedFiles()
-		return &SyncError{
-			Type:      "conflict",
-			Message:   "Rebase conflicts detected",
-			Conflicts: strings.Split(conflicts, "\n"),
-		}
-	}
-	return nil
-}
-
-func handlePushError(err error, branch string) error {
-	if strings.Contains(strings.ToLower(err.Error()), "non-fast-forward") {
-		return fmt.Errorf("remote branch has new changes. Please run 'sage sync' again to incorporate them")
-	}
-	return fmt.Errorf("failed to push branch %q: %w", branch, err)
-}
-
-func restoreStashedChanges(g git.Service, spinner *ui.Spinner, stashRef string) error {
-	spinner.Start("Restoring your changes")
-	if err := g.StashPop(); err != nil {
-		spinner.StopFail()
-		return fmt.Errorf("failed to restore your changes: %w\nYou can restore them manually with 'git stash pop'", err)
-	}
-	spinner.StopSuccess()
-	return nil
-}
-
-func handleConflicts(g git.Service, conflicts []string) error {
-	ui.Warning("Conflicts detected in the following files:")
-	for _, file := range conflicts {
-		fmt.Printf("  - %s\n", file)
-	}
-
-	ui.Info("\nTo resolve conflicts:")
-	fmt.Println("1. Open each conflicted file and look for conflict markers:")
-	fmt.Println("   <<<<<<< HEAD")
-	fmt.Println("   Your changes")
-	fmt.Println("   =======")
-	fmt.Println("   Their changes")
-	fmt.Println("   >>>>>>> branch-name")
-	fmt.Println("\n2. Edit the files to resolve conflicts")
-	fmt.Println("3. Remove the conflict markers")
-	fmt.Println("4. Stage the resolved files:")
-	fmt.Printf("   git add %s\n", strings.Join(conflicts, " "))
-	fmt.Println("5. Continue the sync:")
-	fmt.Println("   sage sync --continue")
-
-	return &SyncError{
-		Type:      "conflict",
-		Message:   "Conflicts need to be resolved",
-		Conflicts: conflicts,
-	}
-}
-
-// SyncError represents a sync-specific error with additional context
+// SyncError represents an error that occurred during sync
 type SyncError struct {
 	Type      string
 	Message   string
@@ -497,5 +272,74 @@ func handleSyncResult(result SyncResult) error {
 	}
 
 	ui.Success(result.Message)
+	return nil
+}
+
+func handleSyncError(g git.Service, err error, result *SyncResult) error {
+	if strings.Contains(err.Error(), "conflict") {
+		sg, ok := g.(*git.ShellGit)
+		if !ok {
+			return err
+		}
+		conflicts, _ := sg.ListConflictedFiles()
+		return &SyncError{
+			Type:      "conflict",
+			Message:   "Conflicts detected during sync",
+			Conflicts: strings.Split(conflicts, "\n"),
+		}
+	}
+	return err
+}
+
+func getBranchInfo(g git.Service) (string, string, error) {
+	curBranch, err := g.CurrentBranch()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get current branch: %w", err)
+	}
+
+	parentBranch, err := g.DefaultBranch()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get default branch: %w", err)
+	}
+
+	return curBranch, parentBranch, nil
+}
+
+func handleWorkingDirectory(g git.Service) (bool, string, error) {
+	clean, err := g.IsClean()
+	if err != nil {
+		return false, "", fmt.Errorf("failed to check working directory: %w", err)
+	}
+
+	if clean {
+		return false, "", nil
+	}
+
+	// Stash changes with a descriptive message
+	msg := fmt.Sprintf("sage-sync-%d", time.Now().Unix())
+	if err := g.Stash(msg); err != nil {
+		return false, "", fmt.Errorf("failed to stash changes: %w", err)
+	}
+
+	return true, msg, nil
+}
+
+func updateParentBranch(g git.Service, parentBranch string) error {
+	if err := g.Checkout(parentBranch); err != nil {
+		return fmt.Errorf("failed to checkout %s: %w", parentBranch, err)
+	}
+
+	if err := g.PullFF(); err != nil {
+		return fmt.Errorf("failed to update %s: %w", parentBranch, err)
+	}
+
+	return nil
+}
+
+func rebaseBranch(g git.Service, parentBranch string) error {
+	if err := g.PullRebase(); err != nil {
+		return fmt.Errorf("failed to rebase onto %s: %w", parentBranch, err)
+	}
+
 	return nil
 }

@@ -4,34 +4,42 @@ import (
 	"fmt"
 
 	"github.com/crazywolf132/sage/internal/git"
+	"github.com/crazywolf132/sage/internal/undo"
 )
 
+// Undo handles undoing Git operations
 func Undo(g git.Service, count int) error {
-	repo, err := g.IsRepo()
-	if err != nil || !repo {
-		return fmt.Errorf("not a git repo")
+	s := undo.NewService(g)
+	if err := s.LoadHistory("."); err != nil {
+		return fmt.Errorf("failed to load undo history: %w", err)
 	}
 
-	merging, err := g.IsMerging()
-	if err != nil {
-		return err
-	}
-	if merging {
-		return g.MergeAbort()
-	}
-	rebase, err := g.IsRebasing()
-	if err != nil {
-		return err
-	}
-	if rebase {
-		return g.RebaseAbort()
+	return s.UndoLast(count)
+}
+
+// RecordOperation records a Git operation in the undo history
+func RecordOperation(g git.Service, opType, description, command, category string, files []string, branch string, message string, stashed bool, stashRef string) error {
+	s := undo.NewService(g)
+	if err := s.LoadHistory("."); err != nil {
+		return fmt.Errorf("failed to load undo history: %w", err)
 	}
 
-	// If count is not specified or is 1, do a single undo
-	if count <= 1 {
-		return g.ResetSoft("HEAD~1")
+	// Create metadata for the operation
+	op := undo.Operation{
+		Type:        opType,
+		Description: description,
+		Command:     command,
+		Category:    category,
+	}
+	op.Metadata.Files = files
+	op.Metadata.Branch = branch
+	op.Metadata.Message = message
+	op.Metadata.Stashed = stashed
+	op.Metadata.StashRef = stashRef
+
+	if err := s.RecordOperation(opType, description, command, category, op); err != nil {
+		return fmt.Errorf("failed to record operation: %w", err)
 	}
 
-	// For multiple commits, use HEAD~N where N is the count
-	return g.ResetSoft(fmt.Sprintf("HEAD~%d", count))
+	return s.SaveHistory(".")
 }

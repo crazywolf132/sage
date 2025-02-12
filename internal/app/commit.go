@@ -43,38 +43,64 @@ type CommitResult struct {
 // It handles both simple messages and those with scopes - e.g., feat(scope): message.
 func changeCommitType(msg, newType string) string {
 	// If message doesn't follow conventional format, prepend the type
-	if !strings.Contains(msg, ": ") {
+	if !strings.Contains(msg, ":") {
 		return fmt.Sprintf("%s: %s", newType, msg)
 	}
 	// Split into type and message parts
-	parts := strings.SplitN(msg, ": ", 2)
-	// Handle messages with scope - e.g., feat(api): message
-	if strings.Contains(parts[0], "(") {
-		typeParts := strings.SplitN(parts[0], "(", 2)
-		scope := "(" + typeParts[1] // includes the closing parenthesis
-		return fmt.Sprintf("%s%s: %s", newType, scope, parts[1])
+	parts := strings.SplitN(msg, ":", 2)
+	typeScope := parts[0]
+	message := strings.TrimSpace(parts[1])
+
+	// Check if there's a scope
+	if strings.Contains(typeScope, "(") {
+		scope := strings.Split(typeScope, "(")[1]
+		scope = strings.TrimRight(scope, ")")
+		return fmt.Sprintf("%s(%s): %s", newType, scope, message)
 	}
+
 	// Handle messages without scope
-	return fmt.Sprintf("%s: %s", newType, parts[1])
+	return fmt.Sprintf("%s: %s", newType, message)
 }
 
 // Commit implements our simplified commit pipeline.
 // It automatically stages every file, then (if no message is provided)
 // uses AI (if enabled) to generate a commit message.
-func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
-	// Verify we’re in a Git repository.
+func Commit(g git.Service, opts CommitOptions) (CommitResult, error) {
+	result := CommitResult{}
+
+	// Verify we're in a Git repository.
 	isRepo, err := g.IsRepo()
 	if err != nil || !isRepo {
-		return nil, fmt.Errorf("not a git repository")
+		return result, fmt.Errorf("not a git repository")
 	}
 
 	// Get the current status.
 	status, err := g.StatusPorcelain()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get status: %w", err)
+		return result, fmt.Errorf("failed to get status: %w", err)
 	}
 	if strings.TrimSpace(status) == "" && !opts.AllowEmpty {
-		return nil, fmt.Errorf("no changes to commit")
+		return result, fmt.Errorf("no changes to commit")
+	}
+
+	// Get current branch for metadata
+	branch, err := g.CurrentBranch()
+	if err != nil {
+		return result, fmt.Errorf("failed to get current branch: %w", err)
+	}
+
+	// Get list of changed files for metadata
+	var files []string
+	for _, line := range strings.Split(strings.TrimSpace(status), "\n") {
+		if line == "" {
+			continue
+		}
+		path := strings.TrimSpace(line[3:])
+		if strings.Contains(path, " -> ") {
+			parts := strings.Split(path, " -> ")
+			path = parts[1]
+		}
+		files = append(files, path)
 	}
 
 	// If no commit message was provided...
@@ -82,15 +108,15 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 		if opts.UseAI {
 			diff, err := g.GetDiff()
 			if err != nil {
-				return nil, fmt.Errorf("failed to get diff: %w", err)
+				return result, fmt.Errorf("failed to get diff: %w", err)
 			}
 			client := ai.NewClient("")
 			if client.APIKey == "" {
-				return nil, fmt.Errorf("AI features require an OpenAI API key")
+				return result, fmt.Errorf("AI features require an OpenAI API key")
 			}
 			aiMsg, err := client.GenerateCommitMessage(diff)
 			if err != nil {
-				return nil, fmt.Errorf("failed to generate AI commit message: %w", err)
+				return result, fmt.Errorf("failed to generate AI commit message: %w", err)
 			}
 			fmt.Printf("Generated commit message: %q\n", aiMsg)
 			if opts.AutoAccept {
@@ -104,7 +130,7 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 					Options: []string{"Accept", "Change type", "Enter manually"},
 				}, &choice)
 				if err != nil {
-					return nil, err
+					return result, err
 				}
 
 				switch choice {
@@ -120,14 +146,14 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 						},
 					}, &newType)
 					if err != nil {
-						return nil, err
+						return result, err
 					}
 					opts.Message = changeCommitType(aiMsg, newType)
 					break
 				case "Enter manually":
 					msg, scope, ctype, err := ui.AskCommitMessage(opts.UseConventional)
 					if err != nil {
-						return nil, err
+						return result, err
 					}
 					if opts.UseConventional {
 						if scope != "" {
@@ -143,7 +169,7 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 		} else {
 			msg, scope, ctype, err := ui.AskCommitMessage(opts.UseConventional)
 			if err != nil {
-				return nil, err
+				return result, err
 			}
 			if opts.UseConventional {
 				if scope != "" {
@@ -164,31 +190,29 @@ func Commit(g git.Service, opts CommitOptions) (*CommitResult, error) {
 
 	// Stage everything (we no longer exclude .sage/).
 	if err := g.StageAll(); err != nil {
-		return nil, err
+		return result, err
 	}
 
 	// Create the commit with the final message and options
 	if err := g.Commit(opts.Message, opts.AllowEmpty, true); err != nil {
-		return nil, fmt.Errorf("failed to commit: %w", err)
+		return result, fmt.Errorf("failed to commit: %w", err)
 	}
-	// Create result object with the actual message used
-	res := &CommitResult{ActualMessage: opts.Message}
+
+	// Record the operation in undo history
+	if err := RecordOperation(g, "commit", opts.Message, "git commit", "commit", files, branch, opts.Message, false, ""); err != nil {
+		ui.Warning("Failed to record operation in undo history")
+	}
+
+	result.ActualMessage = opts.Message
 
 	// Push the commit to remote if requested
 	if opts.PushAfterCommit {
-		// Get current branch name for pushing
-		branch, err := g.CurrentBranch()
-		if err != nil {
-			return nil, err
-		}
 		// Push changes to remote repository
 		if err := g.Push(branch, false); err != nil {
-			return nil, err
+			return result, err
 		}
-		// Mark the result as pushed
-		res.Pushed = true
+		result.Pushed = true
 	}
 
-	// Return the commit result with message and push status
-	return res, nil
+	return result, nil
 }
