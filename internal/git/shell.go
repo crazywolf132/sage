@@ -286,7 +286,7 @@ func (s *ShellGit) ResetSoft(ref string) error {
 
 // ListBranches returns a list of all local branches
 func (s *ShellGit) ListBranches() ([]string, error) {
-	out, err := s.run("branch", "--list", "--format=%(refname:short)")
+	out, err := s.run("branch", "--sort=-committerdate", "--format=%(refname:short)")
 	if err != nil {
 		return nil, err
 	}
