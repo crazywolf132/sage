@@ -18,10 +18,11 @@ const baseURL = "https://api.github.com"
 
 // pullRequestAPI is a minimal data holder for GH API calls
 type pullRequestAPI struct {
-	token  string
-	client *http.Client
-	owner  string
-	repo   string
+	token   string
+	client  *http.Client
+	owner   string
+	repo    string
+	baseURL string // Base URL for API requests, defaults to GitHub API
 }
 
 // PullRequest is the domain object representing a PR
@@ -134,7 +135,7 @@ func (p *pullRequestAPI) do(method, url string, body any) ([]byte, error) {
 
 // CreatePR does a POST /repos/:owner/:repo/pulls
 func (p *pullRequestAPI) CreatePR(title, body, head, base string, draft bool) (*PullRequest, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/pulls", baseURL, p.owner, p.repo)
+	url := fmt.Sprintf("%s/repos/%s/%s/pulls", p.baseURL, p.owner, p.repo)
 	payload := map[string]any{
 		"title": title,
 		"body":  body,
@@ -155,7 +156,7 @@ func (p *pullRequestAPI) CreatePR(title, body, head, base string, draft bool) (*
 
 // ListPRs does GET /repos/:owner/:repo/pulls?state=STATE
 func (p *pullRequestAPI) ListPRs(state string) ([]PullRequest, error) {
-	u := fmt.Sprintf("%s/repos/%s/%s/pulls?state=%s", baseURL, p.owner, p.repo, state)
+	u := fmt.Sprintf("%s/repos/%s/%s/pulls?state=%s", p.baseURL, p.owner, p.repo, state)
 	data, err := p.do("GET", u, nil)
 	if err != nil {
 		return nil, err
@@ -169,7 +170,7 @@ func (p *pullRequestAPI) ListPRs(state string) ([]PullRequest, error) {
 
 // MergePR does PUT /repos/:owner/:repo/pulls/:pull_number/merge
 func (p *pullRequestAPI) MergePR(num int, method string) error {
-	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/merge", baseURL, p.owner, p.repo, num)
+	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/merge", p.baseURL, p.owner, p.repo, num)
 	payload := map[string]string{
 		"merge_method": method, // "merge", "squash", or "rebase"
 	}
@@ -179,7 +180,7 @@ func (p *pullRequestAPI) MergePR(num int, method string) error {
 
 // ClosePR does PATCH /repos/:owner/:repo/pulls/:pull_number (state=closed)
 func (p *pullRequestAPI) ClosePR(num int) error {
-	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d", baseURL, p.owner, p.repo, num)
+	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d", p.baseURL, p.owner, p.repo, num)
 	payload := map[string]string{
 		"state": "closed",
 	}
@@ -190,7 +191,7 @@ func (p *pullRequestAPI) ClosePR(num int) error {
 // GetPRDetails does GET /repos/:owner/:repo/pulls/:pull_number and fetches additional data
 func (p *pullRequestAPI) GetPRDetails(num int) (*PullRequest, error) {
 	// Get basic PR info
-	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d", baseURL, p.owner, p.repo, num)
+	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d", p.baseURL, p.owner, p.repo, num)
 	data, err := p.do("GET", u, nil)
 	if err != nil {
 		return nil, err
@@ -228,7 +229,7 @@ func (p *pullRequestAPI) GetPRDetails(num int) (*PullRequest, error) {
 }
 
 func (p *pullRequestAPI) getPRReviews(num int) ([]Review, error) {
-	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/reviews", baseURL, p.owner, p.repo, num)
+	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/reviews", p.baseURL, p.owner, p.repo, num)
 	data, err := p.do("GET", u, nil)
 	if err != nil {
 		return nil, err
@@ -242,7 +243,7 @@ func (p *pullRequestAPI) getPRReviews(num int) ([]Review, error) {
 
 func (p *pullRequestAPI) getPRChecks(num int) ([]Check, error) {
 	// First get the ref (SHA) for the PR head
-	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d", baseURL, p.owner, p.repo, num)
+	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d", p.baseURL, p.owner, p.repo, num)
 	data, err := p.do("GET", u, nil)
 	if err != nil {
 		return nil, err
@@ -257,7 +258,7 @@ func (p *pullRequestAPI) getPRChecks(num int) ([]Check, error) {
 	}
 
 	// Then get check runs for that SHA
-	u = fmt.Sprintf("%s/repos/%s/%s/commits/%s/check-runs", baseURL, p.owner, p.repo, pr.Head.SHA)
+	u = fmt.Sprintf("%s/repos/%s/%s/commits/%s/check-runs", p.baseURL, p.owner, p.repo, pr.Head.SHA)
 	data, err = p.do("GET", u, nil)
 	if err != nil {
 		return nil, err
@@ -272,7 +273,7 @@ func (p *pullRequestAPI) getPRChecks(num int) ([]Check, error) {
 }
 
 func (p *pullRequestAPI) getPRTimeline(num int) ([]TimelineEvent, error) {
-	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/commits", baseURL, p.owner, p.repo, num)
+	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/commits", p.baseURL, p.owner, p.repo, num)
 	data, err := p.do("GET", u, nil)
 	if err != nil {
 		return nil, err
@@ -345,7 +346,7 @@ func (p *pullRequestAPI) CheckoutPR(num int) (string, error) {
 
 // ListPRUnresolvedThreads checks review comments for prNumber
 func (p *pullRequestAPI) ListPRUnresolvedThreads(prNum int) ([]UnresolvedThread, error) {
-	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/comments", baseURL, p.owner, p.repo, prNum)
+	u := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/comments", p.baseURL, p.owner, p.repo, prNum)
 	data, err := p.do("GET", u, nil)
 	if err != nil {
 		return nil, err
@@ -442,7 +443,7 @@ func (p *pullRequestAPI) getDirectoryContent(path string) ([]struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
 }, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/contents/%s", baseURL, p.owner, p.repo, path)
+	url := fmt.Sprintf("%s/repos/%s/%s/contents/%s", p.baseURL, p.owner, p.repo, path)
 	data, err := p.do("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -460,7 +461,7 @@ func (p *pullRequestAPI) getDirectoryContent(path string) ([]struct {
 }
 
 func (p *pullRequestAPI) getContentFile(path string) (string, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/contents/%s", baseURL, p.owner, p.repo, path)
+	url := fmt.Sprintf("%s/repos/%s/%s/contents/%s", p.baseURL, p.owner, p.repo, path)
 	data, err := p.do("GET", url, nil)
 	if err != nil {
 		return "", err
@@ -480,7 +481,7 @@ func (p *pullRequestAPI) getContentFile(path string) (string, error) {
 }
 
 func (p *pullRequestAPI) AddLabels(prNumber int, labels []string) error {
-	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d/labels", baseURL, p.owner, p.repo, prNumber)
+	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d/labels", p.baseURL, p.owner, p.repo, prNumber)
 	payload := map[string][]string{
 		"labels": labels,
 	}
@@ -489,7 +490,7 @@ func (p *pullRequestAPI) AddLabels(prNumber int, labels []string) error {
 }
 
 func (p *pullRequestAPI) RequestReviewers(prNumber int, reviewers []string) error {
-	url := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/requested_reviewers", baseURL, p.owner, p.repo, prNumber)
+	url := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/requested_reviewers", p.baseURL, p.owner, p.repo, prNumber)
 	payload := map[string][]string{
 		"reviewers": reviewers,
 	}
@@ -518,7 +519,7 @@ func runCmd(prog string, args ...string) (string, error) {
 // Returns nil if no PR exists for the branch.
 func (p *pullRequestAPI) GetPRForBranch(branchName string) (*PullRequest, error) {
 	// List open PRs for this branch
-	u := fmt.Sprintf("%s/repos/%s/%s/pulls?state=open&head=%s:%s", baseURL, p.owner, p.repo, p.owner, branchName)
+	u := fmt.Sprintf("%s/repos/%s/%s/pulls?state=open&head=%s:%s", p.baseURL, p.owner, p.repo, p.owner, branchName)
 	data, err := p.do("GET", u, nil)
 	if err != nil {
 		return nil, err
@@ -535,7 +536,7 @@ func (p *pullRequestAPI) GetPRForBranch(branchName string) (*PullRequest, error)
 
 // GetLatestRelease returns the latest release version from GitHub
 func (p *pullRequestAPI) GetLatestRelease() (string, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/releases/latest", baseURL, p.owner, p.repo)
+	url := fmt.Sprintf("%s/repos/%s/%s/releases/latest", p.baseURL, p.owner, p.repo)
 	data, err := p.do("GET", url, nil)
 	if err != nil {
 		return "", err
@@ -560,10 +561,11 @@ func NewClient() Client {
 	token := getToken()
 
 	return &pullRequestAPI{
-		owner:  owner,
-		repo:   repo,
-		token:  token,
-		client: &http.Client{},
+		owner:   owner,
+		repo:    repo,
+		token:   token,
+		client:  &http.Client{},
+		baseURL: baseURL,
 	}
 }
 
@@ -617,7 +619,7 @@ func (p *pullRequestAPI) UpdatePR(num int, pr *PullRequest) error {
 	}
 
 	// Make the PATCH request to update the PR
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/pulls/%d", p.owner, p.repo, num)
+	url := fmt.Sprintf("%s/repos/%s/%s/pulls/%d", p.baseURL, p.owner, p.repo, num)
 	req, err := http.NewRequest("PATCH", url, strings.NewReader(jsonEncode(data)))
 	if err != nil {
 		return err
