@@ -1,0 +1,25 @@
+name: Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Install Git
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git
+      - name: Repo Ranger Code Review
+        uses: crazywolf132/repo-ranger@v1.0.0
+        with:
+          api_key: ${{ secrets.REVIEW_API_KEY }}
+          api_url: 'https://api.openai.com/v1'
+          model: 'gpt-4'
+          inline_comments: true
+          github_token: ${{ secrets.GITHUB_TOKEN }} 
