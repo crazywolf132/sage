@@ -87,6 +87,16 @@ func Set(key, value string, global bool) error {
 	return writeLocalConfig()
 }
 
+// Unset removes a configuration value
+func Unset(key string, global bool) error {
+	if global {
+		delete(globalData, key)
+		return writeGlobalConfig()
+	}
+	delete(localData, key)
+	return writeLocalConfig()
+}
+
 // load / write global
 
 func globalPath() (string, error) {

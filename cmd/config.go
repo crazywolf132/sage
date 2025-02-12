@@ -112,8 +112,30 @@ var configListCmd = &cobra.Command{
 		fmt.Printf("\n%s\n", ui.Bold("Usage:"))
 		fmt.Printf("  Set a value:   %s\n", ui.White("sage config set <key> <value>"))
 		fmt.Printf("  Get a value:   %s\n", ui.White("sage config get <key>"))
+		fmt.Printf("  Remove a value: %s\n", ui.White("sage config unset <key>"))
 		fmt.Printf("  List values:   %s\n\n", ui.White("sage config list"))
 
+		return nil
+	},
+}
+
+var configUnsetCmd = &cobra.Command{
+	Use:   "unset <key>",
+	Args:  cobra.ExactArgs(1),
+	Short: "Remove a config value",
+	Long: `Remove a configuration value. By default, removes from the global config.
+Use --local to remove from the local repository config instead.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		key := args[0]
+		err := config.Unset(key, !useLocalConfig)
+		if err != nil {
+			return err
+		}
+		location := "global"
+		if useLocalConfig {
+			location = "local"
+		}
+		fmt.Printf("%s Removed %s (%s config)\n", ui.Green("✓"), key, location)
 		return nil
 	},
 }
@@ -123,8 +145,10 @@ func init() {
 	configCmd.AddCommand(configGetCmd)
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configListCmd)
+	configCmd.AddCommand(configUnsetCmd)
 
-	// Add --local flag to get and set commands
+	// Add --local flag to get, set, and unset commands
 	configGetCmd.Flags().BoolVarP(&useLocalConfig, "local", "l", false, "Use local repository config")
 	configSetCmd.Flags().BoolVarP(&useLocalConfig, "local", "l", false, "Use local repository config")
+	configUnsetCmd.Flags().BoolVarP(&useLocalConfig, "local", "l", false, "Use local repository config")
 }
