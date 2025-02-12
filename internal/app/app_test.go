@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/crazywolf132/sage/internal/gh"
 	"github.com/crazywolf132/sage/internal/git"
 )
 
@@ -24,6 +25,14 @@ type mockGit struct {
 	isRebasing    bool
 	staged        map[string]bool
 	ops           []string
+}
+
+// mockGHClient is a test implementation of gh.Client
+type mockGHClient struct {
+	gh.Client
+	prTemplate string
+	pr         *gh.PullRequest
+	err        error
 }
 
 func newMockGit() *mockGit {
@@ -711,6 +720,266 @@ func TestFindCleanableBranches(t *testing.T) {
 	}
 }
 
+func TestCreatePullRequest(t *testing.T) {
+	tests := []struct {
+		name      string
+		mock      *mockGit
+		ghc       *mockGHClient
+		opts      CreatePROpts
+		wantErr   bool
+		wantOps   []string
+		wantPRNum int
+	}{
+		{
+			name: "successful PR creation",
+			mock: func() *mockGit {
+				m := newMockGit()
+				m.isRepo = true
+				m.currentBranch = "feature"
+				m.defaultBranch = "main"
+				return m
+			}(),
+			ghc: &mockGHClient{
+				pr: &gh.PullRequest{
+					Number: 123,
+					Title:  "Test PR",
+				},
+			},
+			opts: CreatePROpts{
+				Title:     "Test PR",
+				Body:      "Test body",
+				Base:      "", // Let it use default branch
+				Draft:     false,
+				Reviewers: []string{"reviewer1"},
+				Labels:    []string{"bug"},
+			},
+			wantOps: []string{
+				"IsRepo",
+				"CurrentBranch",
+				"Push:feature",
+				"DefaultBranch",
+			},
+			wantPRNum: 123,
+		},
+		{
+			name: "not a git repo",
+			mock: func() *mockGit {
+				m := newMockGit()
+				m.isRepo = false
+				return m
+			}(),
+			ghc: &mockGHClient{},
+			opts: CreatePROpts{
+				Title: "Test PR",
+			},
+			wantErr: true,
+			wantOps: []string{"IsRepo"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pr, err := CreatePullRequest(tt.mock, tt.ghc, tt.opts)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CreatePullRequest() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr {
+				if !operationsMatch(tt.mock.operations, tt.wantOps) {
+					t.Errorf("CreatePullRequest() operations = %v, want %v", tt.mock.operations, tt.wantOps)
+				}
+				if pr.Number != tt.wantPRNum {
+					t.Errorf("CreatePullRequest() PR number = %v, want %v", pr.Number, tt.wantPRNum)
+				}
+			}
+		})
+	}
+}
+
+func TestSyncBranchWithErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		mock    *mockGit
+		abort   bool
+		cont    bool
+		wantErr bool
+		wantOps []string
+	}{
+		{
+			name: "sync with stash error",
+			mock: func() *mockGit {
+				m := newMockGit()
+				m.isRepo = true
+				m.isClean = false
+				m.err = fmt.Errorf("stash error")
+				return m
+			}(),
+			wantErr: true,
+			wantOps: []string{
+				"IsRepo",
+				"IsMerging",
+				"IsRebasing",
+				"GetCommitHash:HEAD",
+				"CurrentBranch",
+				"DefaultBranch",
+				"GetCommitHash:HEAD",
+				"IsClean",
+				"Stash:sage-sync-",
+			},
+		},
+		{
+			name: "sync with checkout error",
+			mock: func() *mockGit {
+				m := newMockGit()
+				m.isRepo = true
+				m.isClean = true
+				m.err = fmt.Errorf("checkout error")
+				return m
+			}(),
+			wantErr: true,
+			wantOps: []string{
+				"IsRepo",
+				"IsMerging",
+				"IsRebasing",
+				"GetCommitHash:HEAD",
+				"CurrentBranch",
+				"DefaultBranch",
+				"GetCommitHash:HEAD",
+				"IsClean",
+				"Checkout:main",
+			},
+		},
+		{
+			name: "sync with pull error",
+			mock: func() *mockGit {
+				m := newMockGit()
+				m.isRepo = true
+				m.isClean = true
+				m.err = fmt.Errorf("pull error")
+				return m
+			}(),
+			wantErr: true,
+			wantOps: []string{
+				"IsRepo",
+				"IsMerging",
+				"IsRebasing",
+				"GetCommitHash:HEAD",
+				"CurrentBranch",
+				"DefaultBranch",
+				"GetCommitHash:HEAD",
+				"IsClean",
+				"Checkout:main",
+				"PullFF",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := SyncBranch(tt.mock, tt.abort, tt.cont)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SyncBranch() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr {
+				gotOps := tt.mock.operations
+				for i, op := range gotOps {
+					if strings.HasPrefix(op, "Stash:sage-sync-") {
+						gotOps[i] = "Stash:sage-sync-"
+					}
+				}
+				if !operationsMatch(gotOps, tt.wantOps) {
+					t.Errorf("SyncBranch() operations = %v, want %v", gotOps, tt.wantOps)
+				}
+			}
+		})
+	}
+}
+
+func TestSyncBranchContinue(t *testing.T) {
+	tests := []struct {
+		name    string
+		mock    *mockGit
+		abort   bool
+		cont    bool
+		wantErr bool
+		wantOps []string
+	}{
+		{
+			name: "continue merge",
+			mock: func() *mockGit {
+				m := newMockGit()
+				m.isRepo = true
+				m.isMerging = true
+				m.currentBranch = "feature"
+				m.defaultBranch = "main"
+				return m
+			}(),
+			cont: true,
+			wantOps: []string{
+				"IsRepo",
+				"CurrentBranch",
+				"DefaultBranch",
+				"GetCommitHash:HEAD",
+				"IsClean",
+				"Stash:sage-sync-",
+				"GetCommitHash:HEAD",
+				"Checkout:main",
+				"PullFF",
+				"PullRebase",
+				"GetCommitHash:HEAD",
+				"StashPop",
+				"GetCommitHash:HEAD",
+			},
+		},
+		{
+			name: "continue rebase",
+			mock: func() *mockGit {
+				m := newMockGit()
+				m.isRepo = true
+				m.isRebasing = true
+				m.currentBranch = "feature"
+				m.defaultBranch = "main"
+				return m
+			}(),
+			cont: true,
+			wantOps: []string{
+				"IsRepo",
+				"CurrentBranch",
+				"DefaultBranch",
+				"GetCommitHash:HEAD",
+				"IsClean",
+				"Stash:sage-sync-",
+				"GetCommitHash:HEAD",
+				"Checkout:main",
+				"PullFF",
+				"PullRebase",
+				"GetCommitHash:HEAD",
+				"StashPop",
+				"GetCommitHash:HEAD",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := SyncBranch(tt.mock, tt.abort, tt.cont)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SyncBranch() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr {
+				gotOps := tt.mock.operations
+				for i, op := range gotOps {
+					if strings.HasPrefix(op, "Stash:sage-sync-") {
+						gotOps[i] = "Stash:sage-sync-"
+					}
+				}
+				if !operationsMatch(gotOps, tt.wantOps) {
+					t.Errorf("SyncBranch() operations = %v, want %v", gotOps, tt.wantOps)
+				}
+			}
+		})
+	}
+}
+
 // Helper function to compare operation slices
 func operationsMatch(got, want []string) bool {
 	if len(got) != len(want) {
@@ -722,4 +991,189 @@ func operationsMatch(got, want []string) bool {
 		}
 	}
 	return true
+}
+
+func (m *mockGHClient) CreatePR(title, body, head, base string, draft bool) (*gh.PullRequest, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.pr, nil
+}
+
+func (m *mockGHClient) GetPRTemplate() (string, error) {
+	return m.prTemplate, m.err
+}
+
+func (m *mockGHClient) AddLabels(prNum int, labels []string) error {
+	return m.err
+}
+
+func (m *mockGHClient) RequestReviewers(prNum int, reviewers []string) error {
+	return m.err
+}
+
+func (m *mockGHClient) ListPRs(state string) ([]gh.PullRequest, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	if m.pr != nil {
+		return []gh.PullRequest{*m.pr}, nil
+	}
+	return []gh.PullRequest{}, nil
+}
+
+func (m *mockGHClient) MergePR(prNum int, method string) error {
+	return m.err
+}
+
+func (m *mockGHClient) ClosePR(prNum int) error {
+	return m.err
+}
+
+func (m *mockGHClient) CheckoutPR(prNum int) (string, error) {
+	if m.err != nil {
+		return "", m.err
+	}
+	return "pr-branch", nil
+}
+
+func (m *mockGHClient) GetPRDetails(prNum int) (*gh.PullRequest, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.pr, nil
+}
+
+func (m *mockGHClient) ListPRUnresolvedThreads(prNum int) ([]gh.UnresolvedThread, error) {
+	return nil, m.err
+}
+
+func TestListPullRequests(t *testing.T) {
+	tests := []struct {
+		name    string
+		ghc     *mockGHClient
+		state   string
+		wantNum int
+		wantErr bool
+	}{
+		{
+			name: "successful list",
+			ghc: &mockGHClient{
+				pr: &gh.PullRequest{
+					Number: 123,
+					Title:  "Test PR",
+				},
+			},
+			state:   "open",
+			wantNum: 1,
+		},
+		{
+			name:  "empty list",
+			ghc:   &mockGHClient{},
+			state: "open",
+		},
+		{
+			name: "list error",
+			ghc: &mockGHClient{
+				err: fmt.Errorf("list error"),
+			},
+			state:   "open",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prs, err := ListPRs(tt.ghc, tt.state)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ListPRs() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && len(prs) != tt.wantNum {
+				t.Errorf("ListPRs() returned %v PRs, want %v", len(prs), tt.wantNum)
+			}
+		})
+	}
+}
+
+func TestMergePullRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		ghc     *mockGHClient
+		prNum   int
+		method  string
+		wantErr bool
+	}{
+		{
+			name:   "successful merge",
+			ghc:    &mockGHClient{},
+			prNum:  123,
+			method: "squash",
+		},
+		{
+			name: "merge error",
+			ghc: &mockGHClient{
+				err: fmt.Errorf("merge error"),
+			},
+			prNum:   123,
+			method:  "squash",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := MergePR(tt.ghc, tt.prNum, tt.method)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("MergePR() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestCheckoutPullRequest(t *testing.T) {
+	tests := []struct {
+		name       string
+		mock       *mockGit
+		ghc        *mockGHClient
+		prNum      int
+		wantBranch string
+		wantErr    bool
+	}{
+		{
+			name: "successful checkout",
+			mock: func() *mockGit {
+				m := newMockGit()
+				m.isRepo = true
+				return m
+			}(),
+			ghc:        &mockGHClient{},
+			prNum:      123,
+			wantBranch: "pr-branch",
+		},
+		{
+			name: "checkout error",
+			mock: func() *mockGit {
+				m := newMockGit()
+				m.isRepo = true
+				return m
+			}(),
+			ghc: &mockGHClient{
+				err: fmt.Errorf("checkout error"),
+			},
+			prNum:   123,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			branch, err := CheckoutPR(tt.mock, tt.ghc, tt.prNum)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CheckoutPR() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && branch != tt.wantBranch {
+				t.Errorf("CheckoutPR() returned branch %v, want %v", branch, tt.wantBranch)
+			}
+		})
+	}
 }
