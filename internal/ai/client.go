@@ -214,7 +214,41 @@ Respond with ONLY the commit message, no additional text or formatting.`
 }
 
 func (c *Client) GeneratePRDescription(commits, diff string) (string, error) {
-	prompt := fmt.Sprintf(`Based on these commits and changes, generate a comprehensive PR description:
+	prompt := fmt.Sprintf(`You are a technical writer creating a comprehensive pull request description. Analyze the following commits and code changes to create a detailed, well-structured PR description.
+
+Guidelines:
+1. Structure the description with these sections:
+   ## Summary
+   - High-level overview of the changes
+   - The problem being solved or feature being added
+   
+   ## Implementation Details
+   - Key technical changes and design decisions
+   - Important code changes or new components
+   - Any dependencies added or modified
+   
+   ## Testing
+   - How the changes were tested
+   - Any new tests added
+   - Areas that need careful review/testing
+   
+   ## Breaking Changes
+   - List any breaking changes (if applicable)
+   - Migration steps (if needed)
+   
+   ## Related Issues
+   - Reference any related issues or tickets (if apparent from commits)
+
+2. Focus on:
+   - The WHY behind the changes
+   - Key technical decisions
+   - Impact on the codebase
+   - Areas that need reviewer attention
+
+3. Format:
+   - Use clear markdown formatting
+   - Keep sections concise but informative
+   - Use bullet points for better readability
 
 Commits:
 %s
@@ -222,18 +256,13 @@ Commits:
 Changes:
 %s
 
-Please format the PR description in markdown with:
-1. A brief summary of changes
-2. Key implementation details
-3. Testing notes (if applicable)
-4. Breaking changes (if any)
-`, commits, diff)
+Generate a PR description following the above structure and guidelines. Use proper markdown formatting.`, commits, diff)
 
 	return c.GenerateCommitMessage(prompt)
 }
 
 func (c *Client) GeneratePRLabels(commits, diff string) ([]string, error) {
-	prompt := fmt.Sprintf(`Based on these changes, suggest appropriate GitHub PR labels from this list:
+	prompt := fmt.Sprintf(`Based on these changes, suggest appropriate GitHub PR labels from this list ONLY:
 - feature
 - bug
 - documentation
@@ -249,7 +278,7 @@ Commits:
 Changes:
 %s
 
-Return only the label names, separated by commas.`, commits, diff)
+Return ONLY the exact label names from the list above, separated by commas. Do not add any new labels.`, commits, diff)
 
 	response, err := c.GenerateCommitMessage(prompt)
 	if err != nil {
@@ -258,10 +287,27 @@ Return only the label names, separated by commas.`, commits, diff)
 
 	// Parse and clean labels
 	labels := strings.Split(strings.TrimSpace(response), ",")
-	for i := range labels {
-		labels[i] = strings.TrimSpace(labels[i])
+	validLabels := map[string]bool{
+		"feature":       true,
+		"bug":           true,
+		"documentation": true,
+		"enhancement":   true,
+		"refactor":      true,
+		"breaking":      true,
+		"dependencies":  true,
+		"testing":       true,
 	}
-	return labels, nil
+
+	// Filter out invalid labels
+	var cleanedLabels []string
+	for _, label := range labels {
+		label = strings.TrimSpace(label)
+		if validLabels[label] {
+			cleanedLabels = append(cleanedLabels, label)
+		}
+	}
+
+	return cleanedLabels, nil
 }
 
 func (c *Client) GeneratePRTitle(commits, diff string) (string, error) {
