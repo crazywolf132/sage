@@ -575,8 +575,6 @@ func NewClient() Client {
 	 `)
 	}
 
-	fmt.Printf("Using GitHub token from: %s\n", tokenSource.Source)
-
 	return &pullRequestAPI{
 		owner:  owner,
 		repo:   repo,
