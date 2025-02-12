@@ -31,6 +31,11 @@ Run 'sage help' to see all available commands or 'sage <command> --help' for det
 			ui.Warnf("Failed to load config: %v\n", err)
 		}
 
+		// Sync git config for experimental features
+		if err := config.SyncGitConfigFeatures(); err != nil {
+			ui.Warnf("Failed to sync git config features: %v\n", err)
+		}
+
 		// Check for updates before running any command
 		ghClient := gh.NewClient()
 		_ = update.CheckForUpdates(ghClient, version.Get())

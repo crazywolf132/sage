@@ -47,4 +47,17 @@ type Service interface {
 	GetBranchDivergence(branch1, branch2 string) (int, error)
 	GetCommitHash(ref string) (string, error)
 	IsAncestor(commit1, commit2 string) (bool, error)
+	SetConfig(key, value string, global bool) error
+}
+
+// SetConfig sets a git config value
+func (g *ShellGit) SetConfig(key, value string, global bool) error {
+	args := []string{"config"}
+	if global {
+		args = append(args, "--global")
+	}
+	args = append(args, key, value)
+
+	_, err := g.run(args...)
+	return err
 }

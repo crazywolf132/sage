@@ -78,13 +78,19 @@ var configListCmd = &cobra.Command{
 
 		// Experimental Features
 		fmt.Printf("\n%s\n", ui.Bold("Experimental Features:"))
-		fmt.Printf("  %s\n    %s\n    %s\n    %s %s\n",
+		fmt.Printf("  %s\n    %s\n    %s\n    %s\n    %s %s\n",
+			ui.White("experimental.rerere"),
+			"Enable Git's Reuse Recorded Resolution (rerere) feature for conflict resolution.",
+			"When enabled, Git will remember how you resolved conflicts and reuse those resolutions.",
+			"When enabled globally, applies to all repositories where you use Sage (without affecting other Git usage).",
+			"Default:", ui.Gray("false"))
+		fmt.Printf("    %s\n", ui.Gray("Example: sage config set experimental.rerere true      # Enable for all Sage usage"))
+		fmt.Printf("    %s\n", ui.Gray("Example: sage config set --local experimental.rerere true  # Enable for this repo only"))
+		fmt.Printf("\n  %s\n    %s\n    %s\n    %s %s\n",
 			ui.White("experimental.<feature_name>"),
-			"Enable/disable experimental features globally or per repository.",
+			"Enable/disable other experimental features globally or per repository.",
 			"Set to 'true' to enable a feature, 'false' to disable it.",
 			"Default:", ui.Gray("false"))
-		fmt.Printf("    %s\n", ui.Gray("Example: sage config set experimental.feature_name true"))
-		fmt.Printf("    %s\n", ui.Gray("Example: sage config set --local experimental.feature_name true"))
 
 		// Git Configuration
 		fmt.Printf("\n%s\n", ui.Bold("Git Settings:"))
