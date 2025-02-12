@@ -327,6 +327,7 @@ func (s *ShellGit) Log(branch string, limit int, stats, all bool) (string, error
 
 // GetDiff returns the current diff
 // First checks for staged changes, then unstaged if no staged changes exist
+// Also includes the content of untracked files
 func (s *ShellGit) GetDiff() (string, error) {
 	// First check if there are staged changes
 	stagedDiff, err := s.run("diff", "--cached")
@@ -339,13 +340,48 @@ func (s *ShellGit) GetDiff() (string, error) {
 		return stagedDiff, nil
 	}
 
-	// If no staged changes, get unstaged changes
+	// Get unstaged changes
 	unstagedDiff, err := s.run("diff")
 	if err != nil {
 		return "", fmt.Errorf("failed to get unstaged changes: %w", err)
 	}
 
-	return unstagedDiff, nil
+	// Get untracked files
+	status, err := s.run("status", "--porcelain")
+	if err != nil {
+		return "", fmt.Errorf("failed to get status: %w", err)
+	}
+
+	var untrackedContent strings.Builder
+	if unstagedDiff != "" {
+		untrackedContent.WriteString(unstagedDiff)
+		untrackedContent.WriteString("\n")
+	}
+
+	// Process each untracked file
+	for _, line := range strings.Split(strings.TrimSpace(status), "\n") {
+		if !strings.HasPrefix(line, "??") {
+			continue
+		}
+		filename := strings.TrimSpace(line[3:])
+
+		// Read the file content
+		content, err := os.ReadFile(filename)
+		if err != nil {
+			continue // Skip if we can't read the file
+		}
+
+		untrackedContent.WriteString(fmt.Sprintf("diff --git a/%[1]s b/%[1]s\n", filename))
+		untrackedContent.WriteString("new file mode 100644\n")
+		untrackedContent.WriteString("--- /dev/null\n")
+		untrackedContent.WriteString(fmt.Sprintf("+++ b/%s\n", filename))
+		untrackedContent.WriteString("@@ -0,0 +1," + fmt.Sprintf("%d", strings.Count(string(content), "\n")+1) + " @@\n")
+		for _, line := range strings.Split(string(content), "\n") {
+			untrackedContent.WriteString("+" + line + "\n")
+		}
+	}
+
+	return untrackedContent.String(), nil
 }
 
 // SquashCommits performs an interactive rebase to squash commits from the specified start commit
