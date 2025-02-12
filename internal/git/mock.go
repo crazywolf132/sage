@@ -71,6 +71,15 @@ func (m *MockGit) Push(branch string, force bool) error {
 	return nil
 }
 
+// PushWithLease implements Service.PushWithLease
+func (m *MockGit) PushWithLease(branch string) error {
+	m.trackCall("PushWithLease")
+	if _, exists := m.branches[branch]; !exists {
+		return fmt.Errorf("branch %s does not exist", branch)
+	}
+	return nil
+}
+
 // CreateBranch implements Service.CreateBranch
 func (m *MockGit) CreateBranch(name string) error {
 	m.trackCall("CreateBranch")

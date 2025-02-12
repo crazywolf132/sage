@@ -157,6 +157,17 @@ func (s *ShellGit) Push(branch string, force bool) error {
 	return err
 }
 
+// PushWithLease pushes the specified branch to the remote repository using --force-with-lease
+// This is safer than force push as it ensures we don't overwrite changes we haven't seen
+func (s *ShellGit) PushWithLease(branch string) error {
+	if err := validateRef(branch); err != nil {
+		return fmt.Errorf("invalid branch name: %w", err)
+	}
+
+	_, err := s.run("push", "--force-with-lease", "origin", branch)
+	return err
+}
+
 // DefaultBranch returns the name of the default branch (usually main or master)
 func (s *ShellGit) DefaultBranch() (string, error) {
 	out, err := s.run("symbolic-ref", "refs/remotes/origin/HEAD")

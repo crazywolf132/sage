@@ -208,7 +208,18 @@ func performSync(g git.Service, spinner *ui.Spinner) error {
 	}
 	spinner.StopSuccess()
 
-	// 4. Rebase current branch
+	// 4. Pull any remote changes for current branch
+	spinner.Start(fmt.Sprintf("Pulling remote changes for %s", curBranch))
+	if err := g.PullRebase(); err != nil {
+		// If pull fails due to no tracking branch, just continue
+		if !strings.Contains(err.Error(), "no tracking branch") {
+			spinner.StopFail()
+			return handleSyncError(g, err, &result)
+		}
+	}
+	spinner.StopSuccess()
+
+	// 5. Rebase current branch
 	spinner.Start(fmt.Sprintf("Rebasing %s onto %s", curBranch, parentBranch))
 	if err := rebaseBranch(g, parentBranch); err != nil {
 		spinner.StopFail()
@@ -228,7 +239,7 @@ func performSync(g git.Service, spinner *ui.Spinner) error {
 		}
 	}
 
-	// 5. Pop stash if we stashed changes
+	// 6. Pop stash if we stashed changes
 	if result.StashedFiles {
 		spinner.Start("Restoring stashed changes")
 		if err := g.StashPop(); err != nil {
@@ -243,11 +254,25 @@ func performSync(g git.Service, spinner *ui.Spinner) error {
 		}
 	}
 
-	// 6. Push changes to remote
+	// 7. Push changes to remote
 	spinner.Start(fmt.Sprintf("Pushing changes to remote"))
 	if err := g.Push(curBranch, false); err != nil {
-		spinner.StopFail()
-		return fmt.Errorf("failed to push changes: %w", err)
+		// If push fails due to non-fast-forward, try force-with-lease
+		if strings.Contains(err.Error(), "non-fast-forward") {
+			if err := g.PushWithLease(curBranch); err != nil {
+				spinner.StopFail()
+				return fmt.Errorf("failed to push changes (even with --force-with-lease). Remote may have changes you need to pull: %w", err)
+			}
+		} else if strings.Contains(err.Error(), "no upstream branch") {
+			// If no upstream branch exists, set it up
+			if err := g.RunInteractive("push", "--set-upstream", "origin", curBranch); err != nil {
+				spinner.StopFail()
+				return fmt.Errorf("failed to set upstream branch: %w", err)
+			}
+		} else {
+			spinner.StopFail()
+			return fmt.Errorf("failed to push changes: %w", err)
+		}
 	}
 	spinner.StopSuccess()
 
