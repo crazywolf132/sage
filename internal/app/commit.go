@@ -29,6 +29,8 @@ type CommitOptions struct {
 	AutoAccept bool
 	// ChangeType allows overriding the commit type (feat, fix, etc)
 	ChangeType string
+	// Amend determines if the last commit should be amended
+	Amend bool
 }
 
 // CommitResult contains the outcome of a commit operation.
@@ -194,8 +196,18 @@ func Commit(g git.Service, opts CommitOptions) (CommitResult, error) {
 	}
 
 	// Create the commit with the final message and options
-	if err := g.Commit(opts.Message, opts.AllowEmpty, true); err != nil {
-		return result, fmt.Errorf("failed to commit: %w", err)
+	if opts.Amend {
+		if shellGit, ok := g.(*git.ShellGit); ok {
+			if err := shellGit.CommitAmend(opts.Message, opts.AllowEmpty, true); err != nil {
+				return result, fmt.Errorf("failed to amend commit: %w", err)
+			}
+		} else {
+			return result, fmt.Errorf("amend flag is not supported for this git implementation")
+		}
+	} else {
+		if err := g.Commit(opts.Message, opts.AllowEmpty, true); err != nil {
+			return result, fmt.Errorf("failed to commit: %w", err)
+		}
 	}
 
 	// Record the operation in undo history

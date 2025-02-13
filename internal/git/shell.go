@@ -146,6 +146,20 @@ func (s *ShellGit) Commit(msg string, allowEmpty bool, stageAll bool) error {
 	return err
 }
 
+// CommitAmend amends the last commit using '--amend'
+func (s *ShellGit) CommitAmend(msg string, allowEmpty bool, stageAll bool) error {
+	args := []string{"commit", "--amend"}
+	if stageAll {
+		args = append(args, "-a")
+	}
+	args = append(args, "-m", msg)
+	if allowEmpty {
+		args = append(args, "--allow-empty")
+	}
+	_, err := s.run(args...)
+	return err
+}
+
 // Push pushes the specified branch to the remote repository
 // If force is true, performs a force push
 func (s *ShellGit) Push(branch string, force bool) error {

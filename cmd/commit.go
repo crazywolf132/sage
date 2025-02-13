@@ -16,6 +16,7 @@ var (
 	commitConventional bool
 	commitAI           bool
 	commitAutoAccept   bool
+	commitAmend        bool
 )
 
 var commitCmd = &cobra.Command{
@@ -31,7 +32,10 @@ Examples:
   sage commit "feat: add user authentication"
 
   # Stage everything (including .sage/) and commit with push
-  sage commit -p "fix: resolve null pointer error"`,
+  sage commit -p "fix: resolve null pointer error"
+
+  # Amend the last commit with updated files or commit message
+  sage commit --amend "refactor: update commit message"`,
 	Args:    cobra.MaximumNArgs(1),
 	Aliases: []string{"c"},
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -48,6 +52,7 @@ Examples:
 			UseConventional: commitConventional,
 			UseAI:           commitAI,
 			AutoAccept:      commitAutoAccept,
+			Amend:           commitAmend,
 		})
 		if err != nil {
 			return err
@@ -69,4 +74,5 @@ func init() {
 	commitCmd.Flags().BoolVarP(&commitConventional, "conventional", "c", false, "Use conventional commit format")
 	commitCmd.Flags().BoolVarP(&commitAI, "ai", "a", false, "Use AI to generate commit message")
 	commitCmd.Flags().BoolVarP(&commitAutoAccept, "yes", "y", false, "Automatically accept AI-generated commit message")
+	commitCmd.Flags().BoolVar(&commitAmend, "amend", false, "Amend the last commit")
 }
