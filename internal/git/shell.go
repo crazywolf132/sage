@@ -304,7 +304,8 @@ func (s *ShellGit) IsRebasing() (bool, error) {
 
 // StatusPorcelain returns the git status in porcelain format
 func (s *ShellGit) StatusPorcelain() (string, error) {
-	return s.run("status", "--porcelain")
+	// Use --porcelain=v1 to ensure consistent output format
+	return s.run("status", "--porcelain=v1")
 }
 
 // ResetSoft performs a soft reset to the specified reference

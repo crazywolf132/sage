@@ -36,15 +36,23 @@ var statusCmd = &cobra.Command{
 		untracked := make([]app.FileChange, 0)
 
 		for _, c := range st.Changes {
-			switch c.Symbol {
-			case "?":
+			if c.Symbol == "?" {
 				untracked = append(untracked, c)
-			case "A", "M", "D", "R":
-				if strings.HasPrefix(c.Description, "Staged") {
-					staged = append(staged, c)
-				} else {
-					unstaged = append(unstaged, c)
-				}
+				continue
+			}
+
+			// Check if the change is staged, unstaged, or both
+			if strings.HasPrefix(c.Description, "Unstaged") {
+				unstaged = append(unstaged, c)
+			} else if strings.HasPrefix(c.Description, "Staged+Unstaged") {
+				// For files that are both staged and unstaged, show in both sections
+				staged = append(staged, c)
+				unstaged = append(unstaged, c)
+			} else if strings.HasPrefix(c.Description, "Staged") {
+				staged = append(staged, c)
+			} else {
+				// If no clear prefix, assume it's unstaged
+				unstaged = append(unstaged, c)
 			}
 		}
 

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/crazywolf132/sage/internal/git"
@@ -35,21 +36,34 @@ func GetRepoStatus(g git.Service) (*RepoStatus, error) {
 
 	var changes []FileChange
 	if porcelain != "" {
-		lines := strings.Split(strings.TrimSpace(porcelain), "\n")
+		lines := strings.Split(strings.TrimRight(porcelain, "\n"), "\n")
 		for _, ln := range lines {
-			if len(ln) < 4 {
+			if len(ln) < 4 { // Need at least "? filename" or "XY filename"
 				continue
 			}
-			code := ln[:2]
-			path := strings.TrimSpace(ln[3:])
 
-			// Handle renamed files
-			if strings.Contains(path, " -> ") {
-				parts := strings.Split(path, " -> ")
-				path = parts[1] // Use the new path
+			indexStatus := ln[0]    // First character is always index status
+			workTreeStatus := ln[1] // Second character is always worktree status
+
+			pathStart := 2
+			for pathStart < len(ln) && ln[pathStart] == ' ' {
+				pathStart++
 			}
 
-			symbol, desc := interpretStatus(code)
+			if pathStart >= len(ln) {
+				continue
+			}
+
+			path := ln[pathStart:]
+
+			if strings.Contains(path, " -> ") {
+				parts := strings.Split(path, " -> ")
+				if len(parts) == 2 {
+					path = parts[1]
+				}
+			}
+
+			symbol, desc := interpretStatus(indexStatus, workTreeStatus)
 			changes = append(changes, FileChange{
 				Symbol:      symbol,
 				File:        path,
@@ -60,27 +74,69 @@ func GetRepoStatus(g git.Service) (*RepoStatus, error) {
 	return &RepoStatus{Branch: br, Changes: changes}, nil
 }
 
-func interpretStatus(code string) (string, string) {
-	// First character represents staging area
-	// Second character represents working tree
-	switch code {
-	case "M ":
-		return "M", "Staged Modified"
-	case " M":
-		return "M", "Modified"
-	case "A ":
-		return "A", "Staged Added"
-	case "AM":
-		return "M", "Staged Added, with modifications"
-	case "D ":
-		return "D", "Staged Deleted"
-	case " D":
-		return "D", "Deleted"
-	case "R ":
-		return "R", "Staged Renamed"
-	case "??":
+// interpretStatus interprets the status codes from git status --porcelain=v1
+// indexStatus is the status in the staging area (first character)
+// workTreeStatus is the status in the working tree (second character)
+func interpretStatus(indexStatus, workTreeStatus byte) (string, string) {
+	if indexStatus == '?' && workTreeStatus == '?' {
 		return "?", "Untracked"
+	}
+
+	switch indexStatus {
+	case 'M':
+		if workTreeStatus == 'M' {
+			return "M", "Staged+Unstaged Modified"
+		}
+		return "M", "Staged Modified"
+	case 'A':
+		if workTreeStatus == 'M' {
+			return "M", "Staged Added, with modifications"
+		}
+		if workTreeStatus == 'D' {
+			return "D", "Staged Added, but deleted"
+		}
+		return "A", "Staged Added"
+	case 'D':
+		if workTreeStatus == 'M' {
+			return "M", "Staged Deleted, but modified"
+		}
+		return "D", "Staged Deleted"
+	case 'R':
+		if workTreeStatus == 'M' {
+			return "R", "Staged Renamed, with modifications"
+		}
+		return "R", "Staged Renamed"
+	case 'C':
+		if workTreeStatus == 'M' {
+			return "C", "Staged Copied, with modifications"
+		}
+		return "C", "Staged Copied"
+	case ' ':
+		switch workTreeStatus {
+		case 'M':
+			return "M", "Unstaged Modified"
+		case 'D':
+			return "D", "Unstaged Deleted"
+		case 'A':
+			return "A", "Unstaged Added"
+		}
+	}
+
+	return " ", fmt.Sprintf("Unknown Status: index=[%c] worktree=[%c]", indexStatus, workTreeStatus)
+}
+
+// Helper function to get status description
+func getStatusDescription(status byte) string {
+	switch status {
+	case 'M':
+		return "Modified"
+	case 'A':
+		return "Added"
+	case 'D':
+		return "Deleted"
+	case 'R':
+		return "Renamed"
 	default:
-		return " ", "Unknown"
+		return "Unknown"
 	}
 }
