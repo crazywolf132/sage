@@ -9,6 +9,18 @@ import (
 	"github.com/crazywolf132/sage/internal/ui"
 )
 
+// SyncOptions contains all options for the sync operation
+type SyncOptions struct {
+	TargetBranch string
+	Force        bool
+	NoStash      bool
+	NoPush       bool
+	DryRun       bool
+	Verbose      bool
+	Abort        bool
+	Continue     bool
+}
+
 // SyncResult represents the outcome of a sync operation
 type SyncResult struct {
 	Success      bool
@@ -22,28 +34,80 @@ type SyncResult struct {
 	StartTime    time.Time // When sync started
 }
 
+// SyncError represents an error that occurred during sync
+type SyncError struct {
+	Type      string
+	Message   string
+	Conflicts []string
+}
+
+func (e *SyncError) Error() string {
+	switch e.Type {
+	case "conflict":
+		return fmt.Sprintf(`Conflicts found in these files:
+%s
+
+To resolve:
+1. Open the files
+2. Resolve conflicts
+3. Save changes
+4. Run 'sage sync --continue'
+
+To start over: 'sage sync --abort'`,
+			strings.Join(e.Conflicts, "\n"))
+	case "diverged":
+		return fmt.Sprintf(`Remote branch has new changes.
+
+%s
+
+To update:
+1. Use 'sage sync --force' (recommended)
+2. Or merge manually and run 'sage sync'`, e.Message)
+	case "stash":
+		return fmt.Sprintf(`%s
+
+Your changes are safely stashed.
+Run 'git stash pop' to restore them.`, e.Message)
+	case "rebase":
+		return fmt.Sprintf(`Unable to automatically update your branch.
+
+To continue:
+1. Resolve any conflicts
+2. Run 'sage sync --continue'
+
+To start over: 'sage sync --abort'`)
+	case "merge":
+		return fmt.Sprintf(`Unable to automatically update your branch.
+
+To continue:
+1. Resolve any conflicts
+2. Run 'sage sync --continue'
+
+To start over: 'sage sync --abort'`)
+	default:
+		return e.Message
+	}
+}
+
 // SyncBranch synchronizes the current branch with its parent (default) branch.
 // It handles all common scenarios automatically and provides clear guidance when manual intervention is needed.
-func SyncBranch(g git.Service, abort, cont bool) error {
-	// Create a progress spinner
+func SyncBranch(g git.Service, opts SyncOptions) error {
 	spinner := ui.NewSpinner()
 	defer spinner.Stop()
 
-	// Verify repository state
-	spinner.Start("Checking repository state")
-	if err := verifyRepoState(g); err != nil {
-		spinner.StopFail()
-		return err
+	if opts.DryRun {
+		ui.Info("Dry run: Previewing sync operations without modifying your repository")
 	}
-	spinner.StopSuccess()
+	if opts.Verbose {
+		ui.Info("Verbose mode: Displaying detailed operation logs")
+	}
 
-	// Handle abort/continue flags
-	if result := handleSyncFlags(g, abort, cont); result.NeedsAction {
+	// Handle abort/continue flags first
+	if result := handleSyncFlags(g, opts.Abort, opts.Continue); result.NeedsAction {
 		return handleSyncResult(result)
 	}
 
-	// Start the sync process
-	return performSync(g, spinner)
+	return performSync(g, opts, spinner)
 }
 
 func verifyRepoState(g git.Service) error {
@@ -51,6 +115,16 @@ func verifyRepoState(g git.Service) error {
 	if err != nil || !repo {
 		return fmt.Errorf("not a git repository")
 	}
+
+	// Check if we're in a detached HEAD state
+	head, err := g.CurrentBranch()
+	if err != nil {
+		return fmt.Errorf("failed to get current branch: %w", err)
+	}
+	if head == "HEAD" {
+		return fmt.Errorf("cannot sync in detached HEAD state")
+	}
+
 	return nil
 }
 
@@ -72,10 +146,6 @@ func handleAbort(g git.Service) SyncResult {
 				Message: fmt.Sprintf("Failed to abort merge: %v", err),
 			}
 		}
-		// Record the abort operation
-		if err := RecordOperation(g, "merge", "Aborted merge", "git merge --abort", "merge", nil, "", "", false, ""); err != nil {
-			ui.Warning("Failed to record merge abort in undo history")
-		}
 		return SyncResult{
 			Success: true,
 			Message: "Successfully aborted merge",
@@ -87,10 +157,6 @@ func handleAbort(g git.Service) SyncResult {
 				Success: false,
 				Message: fmt.Sprintf("Failed to abort rebase: %v", err),
 			}
-		}
-		// Record the abort operation
-		if err := RecordOperation(g, "rebase", "Aborted rebase", "git rebase --abort", "rebase", nil, "", "", false, ""); err != nil {
-			ui.Warning("Failed to record rebase abort in undo history")
 		}
 		return SyncResult{
 			Success: true,
@@ -124,10 +190,6 @@ func handleContinue(g git.Service) SyncResult {
 				Conflicts:   strings.Split(conflicts, "\n"),
 			}
 		}
-		// Record the continue operation
-		if err := RecordOperation(g, "merge", "Continued merge", "git merge --continue", "merge", nil, "", "", false, ""); err != nil {
-			ui.Warning("Failed to record merge continue in undo history")
-		}
 		return SyncResult{
 			Success: true,
 			Message: "Successfully continued merge: " + strings.TrimSpace(out),
@@ -146,10 +208,6 @@ func handleContinue(g git.Service) SyncResult {
 				Conflicts:   strings.Split(conflicts, "\n"),
 			}
 		}
-		// Record the continue operation
-		if err := RecordOperation(g, "rebase", "Continued rebase", "git rebase --continue", "rebase", nil, "", "", false, ""); err != nil {
-			ui.Warning("Failed to record rebase continue in undo history")
-		}
 		return SyncResult{
 			Success: true,
 			Message: "Successfully continued rebase: " + strings.TrimSpace(out),
@@ -162,200 +220,157 @@ func handleContinue(g git.Service) SyncResult {
 	}
 }
 
-func performSync(g git.Service, spinner *ui.Spinner) error {
+func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 	var result SyncResult
 	result.StartTime = time.Now()
 
-	// 1. Get branch information
-	spinner.Start("Getting branch information")
-	curBranch, parentBranch, err := getBranchInfo(g)
-	if err != nil {
+	if opts.DryRun {
+		ui.Info("Dry run: Previewing sync operations without modifying your repository")
+	}
+
+	// 1. Repository Check
+	spinner.Start("Verifying repository...")
+	if err := verifyRepoState(g); err != nil {
 		spinner.StopFail()
-		return err
+		return fmt.Errorf("Error: Not a Git repository. Please navigate to a valid Git project")
 	}
 	spinner.StopSuccess()
 
-	// Save original ref for backup
-	origRef, err := g.GetCommitHash("HEAD")
+	// 2. Branch Information
+	curBranch, parentBranch, err := getBranchInfo(g, opts.TargetBranch)
 	if err != nil {
-		ui.Warning("Could not save original ref for backup")
+		return err
 	}
+
+	// Save reference for safety
+	origRef, _ := g.GetCommitHash("HEAD")
 	result.OriginalRef = origRef
 
-	// 2. Stash changes if needed
-	spinner.Start("Checking working directory")
-	stashed, stashRef, err := handleWorkingDirectory(g)
+	// 3. Local Changes Check
+	hasChanges, err := hasUncommittedChanges(g)
 	if err != nil {
-		spinner.StopFail()
 		return err
 	}
-	result.StashedFiles = stashed
-	result.StashRef = stashRef
-	spinner.StopSuccess()
-
-	// Record stash operation if changes were stashed
-	if stashed {
-		if err := RecordOperation(g, "stash", "Stashed changes", "git stash", "stash", nil, curBranch, "", true, stashRef); err != nil {
-			ui.Warning("Failed to record stash operation in undo history")
+	if hasChanges {
+		if opts.NoStash {
+			return fmt.Errorf("Uncommitted changes found. Use --no-stash to disable automatic stashing or commit your changes")
 		}
-	}
 
-	// 3. Update parent branch
-	spinner.Start(fmt.Sprintf("Updating %s", parentBranch))
-	if err := updateParentBranch(g, parentBranch); err != nil {
-		spinner.StopFail()
-		return handleSyncError(g, err, &result)
-	}
-	spinner.StopSuccess()
-
-	// 4. Pull any remote changes for current branch
-	spinner.Start(fmt.Sprintf("Pulling remote changes for %s", curBranch))
-	if err := g.PullRebase(); err != nil {
-		// If pull fails due to no tracking branch, set it up
-		if strings.Contains(err.Error(), "no tracking information") || strings.Contains(err.Error(), "no upstream branch") {
-			// Try to set up the upstream branch
-			if err := g.RunInteractive("branch", "--set-upstream-to", fmt.Sprintf("origin/%s", curBranch), curBranch); err != nil {
-				// If setting upstream fails, the branch might not exist on remote yet
-				// This is fine, we can continue with the sync
-				spinner.StopSuccess()
-			} else {
-				// Try pulling again now that upstream is set
-				if err := g.PullRebase(); err != nil {
-					// If it still fails, just continue - branch might be new
-					spinner.StopSuccess()
-				} else {
-					spinner.StopSuccess()
-				}
-			}
-		} else {
+		spinner.Start("Saving work in progress...")
+		stashed, stashRef, err := handleWorkingDirectory(g)
+		if err != nil {
 			spinner.StopFail()
-			return handleSyncError(g, err, &result)
+			return fmt.Errorf("Failed to stash changes: %w", err)
 		}
-	} else {
+		result.StashedFiles = stashed
+		result.StashRef = stashRef
 		spinner.StopSuccess()
 	}
 
-	// 5. Rebase current branch
-	spinner.Start(fmt.Sprintf("Rebasing %s onto %s", curBranch, parentBranch))
-	if err := rebaseBranch(g, parentBranch); err != nil {
+	// 4. Remote Updates
+	spinner.Start("Fetching updates...")
+	if err := g.FetchAll(); err != nil {
 		spinner.StopFail()
-		return handleSyncError(g, err, &result)
+		if result.StashedFiles {
+			restoreSpinner := ui.NewSpinner()
+			restoreSpinner.Start("Restoring your work...")
+			_ = g.StashPop()
+			restoreSpinner.StopSuccess()
+		}
+		return fmt.Errorf("Failed to fetch updates: %w", err)
 	}
 	spinner.StopSuccess()
 
-	// Record rebase operation
-	if err := RecordOperation(g, "rebase", fmt.Sprintf("Rebased %s onto %s", curBranch, parentBranch), "git rebase", "rebase", nil, curBranch, "", stashed, stashRef); err != nil {
-		ui.Warning("Failed to record rebase operation in undo history")
-	}
-
-	// Ensure we're on the correct branch after rebase
-	if finalBranch, err := g.CurrentBranch(); err == nil && finalBranch != curBranch {
-		if err := g.Checkout(curBranch); err != nil {
-			ui.Warning(fmt.Sprintf("Failed to switch back to %s after rebase", curBranch))
+	// Check if we're on main/master branch
+	isMainBranch := curBranch == parentBranch
+	behind, err := isBehindRemote(g, curBranch)
+	if err == nil && behind {
+		// 5. Integration (only if not on main/master or if behind remote)
+		if !isMainBranch {
+			spinner.Start("Integrating remote changes...")
+			if err := integrateChanges(g, parentBranch, opts); err != nil {
+				spinner.StopFail()
+				if result.StashedFiles {
+					restoreSpinner := ui.NewSpinner()
+					restoreSpinner.Start("Restoring your work...")
+					_ = g.StashPop()
+					restoreSpinner.StopSuccess()
+				}
+				return handleSyncError(g, err, &result)
+			}
+			spinner.StopSuccess()
 		}
+
+		// 6. Push Changes (only if not on main/master or if we have local commits)
+		if !opts.NoPush && (!isMainBranch || behind) {
+			spinner.Start("Pushing changes...")
+			if err := pushChanges(g, curBranch, opts); err != nil {
+				spinner.StopFail()
+				if result.StashedFiles {
+					restoreSpinner := ui.NewSpinner()
+					restoreSpinner.Start("Restoring your work...")
+					_ = g.StashPop()
+					restoreSpinner.StopSuccess()
+				}
+				return err
+			}
+			spinner.StopSuccess()
+		}
+	} else if isMainBranch {
+		ui.Info("Branch is up to date")
 	}
 
-	// 6. Pop stash if we stashed changes
+	// 7. Restore Changes
 	if result.StashedFiles {
-		spinner.Start("Restoring stashed changes")
+		spinner.Start("Restoring your work...")
 		if err := g.StashPop(); err != nil {
 			spinner.StopFail()
-			return handleSyncError(g, err, &result)
+			return &SyncError{
+				Type:    "stash",
+				Message: "Failed to restore your changes",
+			}
 		}
 		spinner.StopSuccess()
-
-		// Record stash pop operation
-		if err := RecordOperation(g, "stash", "Restored stashed changes", "git stash pop", "stash", nil, curBranch, "", false, ""); err != nil {
-			ui.Warning("Failed to record stash pop operation in undo history")
-		}
 	}
 
-	// 7. Push changes to remote
-	spinner.Start(fmt.Sprintf("Pushing changes to remote"))
-	if err := g.Push(curBranch, false); err != nil {
-		// If push fails due to non-fast-forward, try force-with-lease
-		if strings.Contains(err.Error(), "non-fast-forward") {
-			if err := g.PushWithLease(curBranch); err != nil {
-				spinner.StopFail()
-				return fmt.Errorf("failed to push changes (even with --force-with-lease). Remote may have changes you need to pull: %w", err)
-			}
-		} else if strings.Contains(err.Error(), "no upstream branch") {
-			// If no upstream branch exists, set it up
-			if err := g.RunInteractive("push", "--set-upstream", "origin", curBranch); err != nil {
-				spinner.StopFail()
-				return fmt.Errorf("failed to set upstream branch: %w", err)
-			}
-		} else {
-			spinner.StopFail()
-			return fmt.Errorf("failed to push changes: %w", err)
-		}
+	// 8. Final Status
+	if isMainBranch {
+		ui.Success("Branch is up to date")
+	} else {
+		ui.Success(fmt.Sprintf("Branch '%s' is now up to date", curBranch))
 	}
-	spinner.StopSuccess()
 
 	return nil
 }
 
-// SyncError represents an error that occurred during sync
-type SyncError struct {
-	Type      string
-	Message   string
-	Conflicts []string
-}
-
-func (e *SyncError) Error() string {
-	switch e.Type {
-	case "conflict":
-		return fmt.Sprintf("%s in files:\n%s\n\nTo resolve:\n1. Fix conflicts in the files above\n2. Run 'git add' for each resolved file\n3. Run 'sage sync --continue'\n\nOr run 'sage sync --abort' to cancel",
-			e.Message, strings.Join(e.Conflicts, "\n"))
-	default:
-		return e.Message
-	}
-}
-
-func handleSyncResult(result SyncResult) error {
-	if !result.Success {
-		if result.NeedsAction {
-			switch result.Action {
-			case "resolve_conflicts":
-				return &SyncError{
-					Type:      "conflict",
-					Message:   result.Message,
-					Conflicts: result.Conflicts,
-				}
-			}
-		}
-		return fmt.Errorf(result.Message)
-	}
-
-	ui.Success(result.Message)
-	return nil
-}
-
-func handleSyncError(g git.Service, err error, result *SyncResult) error {
-	if strings.Contains(err.Error(), "conflict") {
-		sg, ok := g.(*git.ShellGit)
-		if !ok {
-			return err
-		}
-		conflicts, _ := sg.ListConflictedFiles()
-		return &SyncError{
-			Type:      "conflict",
-			Message:   "Conflicts detected during sync",
-			Conflicts: strings.Split(conflicts, "\n"),
-		}
-	}
-	return err
-}
-
-func getBranchInfo(g git.Service) (string, string, error) {
+func getBranchInfo(g git.Service, targetBranch string) (string, string, error) {
 	curBranch, err := g.CurrentBranch()
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get current branch: %w", err)
 	}
 
-	parentBranch, err := g.DefaultBranch()
+	parentBranch := targetBranch
+	if parentBranch == "" {
+		parentBranch, err = g.DefaultBranch()
+		if err != nil {
+			return "", "", fmt.Errorf("failed to get default branch: %w", err)
+		}
+	}
+
+	// Validate target branch exists
+	branches, err := g.ListBranches()
 	if err != nil {
-		return "", "", fmt.Errorf("failed to get default branch: %w", err)
+		return "", "", fmt.Errorf("failed to list branches: %w", err)
+	}
+	branchExists := false
+	for _, b := range branches {
+		if b == parentBranch {
+			branchExists = true
+			break
+		}
+	}
+	if !branchExists {
+		return "", "", fmt.Errorf("target branch '%s' does not exist", parentBranch)
 	}
 
 	return curBranch, parentBranch, nil
@@ -380,28 +395,40 @@ func handleWorkingDirectory(g git.Service) (bool, string, error) {
 	return true, msg, nil
 }
 
-func updateParentBranch(g git.Service, parentBranch string) error {
-	// Get current branch before switching
+func hasUncommittedChanges(g git.Service) (bool, error) {
+	clean, err := g.IsClean()
+	if err != nil {
+		return false, fmt.Errorf("failed to check working directory: %w", err)
+	}
+	return !clean, nil
+}
+
+func integrateChanges(g git.Service, parentBranch string, opts SyncOptions) error {
 	curBranch, err := g.CurrentBranch()
 	if err != nil {
 		return fmt.Errorf("failed to get current branch: %w", err)
 	}
 
-	// Switch to parent branch
-	if err := g.Checkout(parentBranch); err != nil {
-		return fmt.Errorf("failed to checkout %s: %w", parentBranch, err)
+	// Determine the best integration strategy
+	divergence, err := g.GetBranchDivergence(curBranch, parentBranch)
+	if err != nil {
+		divergence = 0
 	}
 
-	// Update parent branch
-	if err := g.PullFF(); err != nil {
-		// Switch back to original branch before returning error
-		_ = g.Checkout(curBranch)
-		return fmt.Errorf("failed to update %s: %w", parentBranch, err)
-	}
-
-	// Switch back to original branch
-	if err := g.Checkout(curBranch); err != nil {
-		return fmt.Errorf("failed to checkout %s: %w", curBranch, err)
+	if divergence > 10 {
+		if opts.Verbose {
+			ui.Info("Using merge strategy to preserve branch history")
+		}
+		if err := g.Merge(parentBranch); err != nil {
+			return fmt.Errorf("failed to merge %s: %w", parentBranch, err)
+		}
+	} else {
+		if opts.Verbose {
+			ui.Info("Using rebase strategy for a clean history")
+		}
+		if err := rebaseBranch(g, parentBranch); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -419,10 +446,100 @@ func rebaseBranch(g git.Service, parentBranch string) error {
 		return fmt.Errorf("failed to checkout %s: %w", curBranch, err)
 	}
 
-	// Rebase current branch onto parent branch using the full command
+	// Rebase current branch onto parent branch
 	if err := g.RunInteractive("rebase", "--onto", parentBranch, parentBranch, curBranch); err != nil {
 		return fmt.Errorf("failed to rebase onto %s: %w", parentBranch, err)
 	}
 
 	return nil
+}
+
+func pushChanges(g git.Service, branch string, opts SyncOptions) error {
+	if opts.Force {
+		if err := g.PushWithLease(branch); err != nil {
+			return &SyncError{
+				Type:    "push",
+				Message: fmt.Sprintf("Failed to push changes to remote: %v", err),
+			}
+		}
+		return nil
+	}
+
+	if err := g.Push(branch, false); err != nil {
+		if strings.Contains(err.Error(), "non-fast-forward") {
+			return &SyncError{
+				Type:    "diverged",
+				Message: fmt.Sprintf("Your branch %s has some changes that aren't in sync with origin/%s", branch, branch),
+			}
+		}
+		if strings.Contains(err.Error(), "no upstream branch") {
+			// Try to set up the upstream branch
+			if err := g.RunInteractive("push", "--set-upstream", "origin", branch); err != nil {
+				return fmt.Errorf("failed to set upstream branch: %w", err)
+			}
+			return nil
+		}
+		return fmt.Errorf("failed to push changes: %w", err)
+	}
+	return nil
+}
+
+func handleSyncResult(result SyncResult) error {
+	if !result.Success {
+		if result.NeedsAction {
+			switch result.Action {
+			case "resolve_conflicts":
+				return &SyncError{
+					Type:      "conflict",
+					Message:   "Merge conflicts need to be resolved",
+					Conflicts: result.Conflicts,
+				}
+			}
+		}
+		return fmt.Errorf(result.Message)
+	}
+
+	ui.Success(result.Message)
+	return nil
+}
+
+func handleSyncError(g git.Service, err error, result *SyncResult) error {
+	if strings.Contains(err.Error(), "conflict") {
+		sg, ok := g.(*git.ShellGit)
+		if !ok {
+			return err
+		}
+		conflicts, _ := sg.ListConflictedFiles()
+		return &SyncError{
+			Type:      "conflict",
+			Message:   "Merge conflicts detected. Please resolve conflicts and run 'sage sync --continue'",
+			Conflicts: strings.Split(conflicts, "\n"),
+		}
+	}
+
+	if strings.Contains(err.Error(), "failed to rebase") || strings.Contains(err.Error(), "failed to merge") {
+		return &SyncError{
+			Type:    "conflict",
+			Message: "Merge conflicts detected. Please resolve conflicts and run 'sage sync --continue'",
+		}
+	}
+
+	return err
+}
+
+func isBehindRemote(g git.Service, branch string) (bool, error) {
+	// Get the merge base with remote
+	base, err := g.GetMergeBase(branch, "origin/"+branch)
+	if err != nil {
+		return false, err
+	}
+
+	// Get current HEAD
+	head, err := g.GetCommitHash("HEAD")
+	if err != nil {
+		return false, err
+	}
+
+	// If merge base is different from HEAD, we're behind
+	return base != head, nil
 }

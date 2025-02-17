@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/briandowns/spinner"
@@ -9,35 +10,36 @@ import (
 
 // Spinner provides a progress indicator
 type Spinner struct {
-	s *spinner.Spinner
+	spinner *spinner.Spinner
 }
 
-// NewSpinner creates a new spinner with default settings
+// NewSpinner creates a new spinner instance
 func NewSpinner() *Spinner {
-	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
-	s.Color("cyan")
-	return &Spinner{s: s}
+	s := &Spinner{}
+	s.spinner = spinner.New(spinner.CharSets[14], 100*time.Millisecond)
+	s.spinner.Suffix = " " // Add a space after the spinner
+	return s
 }
 
-// Start begins the spinner animation with a message
-func (s *Spinner) Start(message string) {
-	s.s.Suffix = fmt.Sprintf(" %s", message)
-	s.s.Start()
+// Start starts the spinner with the given message
+func (s *Spinner) Start(msg string) {
+	s.spinner.Suffix = " " + msg // Ensure space between spinner and message
+	s.spinner.Start()
 }
 
-// Stop stops the spinner
+// Stop stops the spinner without any symbol
 func (s *Spinner) Stop() {
-	s.s.Stop()
+	s.spinner.Stop()
 }
 
-// StopSuccess stops the spinner with a success message
+// StopSuccess stops the spinner with a success symbol
 func (s *Spinner) StopSuccess() {
-	s.s.Stop()
-	fmt.Printf("%s %s\n", Green("✓"), s.s.Suffix)
+	s.spinner.Stop()
+	fmt.Printf("✓ %s\n", strings.TrimSpace(s.spinner.Suffix)) // Ensure consistent spacing
 }
 
-// StopFail stops the spinner with a failure message
+// StopFail stops the spinner with a failure symbol
 func (s *Spinner) StopFail() {
-	s.s.Stop()
-	fmt.Printf("%s %s\n", Red("✗"), s.s.Suffix)
+	s.spinner.Stop()
+	fmt.Printf("✗ %s\n", strings.TrimSpace(s.spinner.Suffix)) // Ensure consistent spacing
 }
