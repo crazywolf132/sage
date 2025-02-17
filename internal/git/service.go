@@ -19,6 +19,7 @@ type Service interface {
 	DefaultBranch() (string, error)
 	MergedBranches(base string) ([]string, error)
 	DeleteBranch(name string) error
+	DeleteRemoteBranch(name string) error
 	FetchAll() error
 	Checkout(name string) error
 	Pull() error

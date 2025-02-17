@@ -642,3 +642,12 @@ func (g *ShellGit) IsAncestor(commit1, commit2 string) (bool, error) {
 	}
 	return true, nil
 }
+
+// DeleteRemoteBranch deletes the specified branch from the remote repository
+func (s *ShellGit) DeleteRemoteBranch(name string) error {
+	if err := validateRef(name); err != nil {
+		return fmt.Errorf("invalid branch name: %w", err)
+	}
+	_, err := s.run("push", "origin", "--delete", name)
+	return err
+}

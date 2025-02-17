@@ -317,3 +317,13 @@ func (m *MockGit) IsAncestor(commit1, commit2 string) (bool, error) {
 	m.trackCall("IsAncestor")
 	return true, nil
 }
+
+// DeleteRemoteBranch implements Service.DeleteRemoteBranch
+func (m *MockGit) DeleteRemoteBranch(name string) error {
+	m.trackCall("DeleteRemoteBranch")
+	if err := validateRef(name); err != nil {
+		return err
+	}
+	delete(m.branches, "origin/"+name)
+	return nil
+}
