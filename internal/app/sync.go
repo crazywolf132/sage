@@ -249,6 +249,7 @@ func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 	if err != nil {
 		return err
 	}
+
 	if hasChanges {
 		spinner.Start("Saving work in progress...")
 		stashed, stashRef, err := handleWorkingDirectory(g)
@@ -281,12 +282,48 @@ func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 	// Check if we need to update
 	needsUpdate := false
 
-	// First check if we're behind parent branch
-	parentBase, err := g.GetMergeBase(curBranch, parentBranch)
-	if err == nil {
-		parentHead, err := g.GetCommitHash(parentBranch)
-		if err == nil && parentBase != parentHead {
-			needsUpdate = true
+	// Get current and parent HEADs
+	currentHead, err := g.GetCommitHash(curBranch)
+	if err != nil {
+		return fmt.Errorf("failed to get current HEAD: %w", err)
+	}
+
+	// Get the merge base (common ancestor)
+	mergeBase, err := g.GetMergeBase(curBranch, parentBranch)
+	if err != nil {
+		return fmt.Errorf("failed to get merge base: %w", err)
+	}
+
+	// Determine if we have diverged (have unique commits)
+	hasDiverged := mergeBase != currentHead
+
+	// If we've diverged significantly (more than 10 commits), use merge
+	// Otherwise, use rebase for a cleaner history
+	if hasDiverged {
+		divergence, err := g.GetBranchDivergence(curBranch, parentBranch)
+		if err != nil {
+			divergence = 0
+		}
+
+		if divergence > 10 {
+			if opts.Verbose {
+				ui.Info("Using merge strategy to preserve branch history")
+			}
+			if err := g.Merge(parentBranch); err != nil {
+				return fmt.Errorf("failed to merge %s: %w", parentBranch, err)
+			}
+		} else {
+			if opts.Verbose {
+				ui.Info("Using rebase strategy for a clean history")
+			}
+			if err := rebaseBranch(g, parentBranch); err != nil {
+				return err
+			}
+		}
+	} else {
+		// No divergence, we can fast-forward
+		if err := g.Merge(parentBranch); err != nil {
+			return fmt.Errorf("failed to fast-forward to %s: %w", parentBranch, err)
 		}
 	}
 
@@ -421,25 +458,48 @@ func integrateChanges(g git.Service, parentBranch string, opts SyncOptions) erro
 		return fmt.Errorf("failed to get current branch: %w", err)
 	}
 
-	// Determine the best integration strategy
-	divergence, err := g.GetBranchDivergence(curBranch, parentBranch)
+	// Get the merge base (common ancestor)
+	mergeBase, err := g.GetMergeBase(curBranch, parentBranch)
 	if err != nil {
-		divergence = 0
+		return fmt.Errorf("failed to get merge base: %w", err)
 	}
 
-	if divergence > 10 {
-		if opts.Verbose {
-			ui.Info("Using merge strategy to preserve branch history")
+	// Get current HEAD
+	currentHead, err := g.GetCommitHash(curBranch)
+	if err != nil {
+		return fmt.Errorf("failed to get current HEAD: %w", err)
+	}
+
+	// Determine if we have diverged (have unique commits)
+	hasDiverged := mergeBase != currentHead
+
+	// If we've diverged significantly (more than 10 commits), use merge
+	// Otherwise, use rebase for a cleaner history
+	if hasDiverged {
+		divergence, err := g.GetBranchDivergence(curBranch, parentBranch)
+		if err != nil {
+			divergence = 0
 		}
-		if err := g.Merge(parentBranch); err != nil {
-			return fmt.Errorf("failed to merge %s: %w", parentBranch, err)
+
+		if divergence > 10 {
+			if opts.Verbose {
+				ui.Info("Using merge strategy to preserve branch history")
+			}
+			if err := g.Merge(parentBranch); err != nil {
+				return fmt.Errorf("failed to merge %s: %w", parentBranch, err)
+			}
+		} else {
+			if opts.Verbose {
+				ui.Info("Using rebase strategy for a clean history")
+			}
+			if err := rebaseBranch(g, parentBranch); err != nil {
+				return err
+			}
 		}
 	} else {
-		if opts.Verbose {
-			ui.Info("Using rebase strategy for a clean history")
-		}
-		if err := rebaseBranch(g, parentBranch); err != nil {
-			return err
+		// No divergence, we can fast-forward
+		if err := g.Merge(parentBranch); err != nil {
+			return fmt.Errorf("failed to fast-forward to %s: %w", parentBranch, err)
 		}
 	}
 
@@ -526,7 +586,8 @@ func handleSyncError(g git.Service, err error, result *SyncResult) error {
 
 func isBehindRemote(g git.Service, branch string) (bool, error) {
 	// Get the merge base with remote
-	base, err := g.GetMergeBase(branch, "origin/"+branch)
+	remoteBranch := "origin/" + branch
+	base, err := g.GetMergeBase(branch, remoteBranch)
 	if err != nil {
 		return false, err
 	}
@@ -538,5 +599,6 @@ func isBehindRemote(g git.Service, branch string) (bool, error) {
 	}
 
 	// If merge base is different from HEAD, we're behind
-	return base != head, nil
+	behind := base != head
+	return behind, nil
 }
