@@ -166,10 +166,10 @@ Available experimental features:
 These features can be enabled globally (for all Sage repositories) or locally (per repository). Use the `--local` flag with `sage config set` to enable features for just the current repository.
 
 ### Local Storage
-Sage stores its data in `.sage/` in your repository:
+Sage stores its data in `.git/.sage/` in your repository:
 - `undo_history.json`: Operation history for the undo system
-- `config.json`: Local repository configuration
-These files are automatically ignored in Git operations.
+- `config.toml`: Local repository configuration
+These files are stored in your Git directory and are not committed to your repository.
 
 ### AI Features & Privacy
 When using AI features:

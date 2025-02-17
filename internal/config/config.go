@@ -177,11 +177,20 @@ func writeGlobalConfig() error {
 // local
 
 func localPath() string {
-	return ".sage/config.toml"
+	g := git.NewShellGit()
+	gitDir, err := g.Run("rev-parse", "--git-dir")
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(strings.TrimSpace(gitDir), ".sage/config.toml")
 }
 
 func loadLocalConfig() error {
-	b, err := os.ReadFile(localPath())
+	path := localPath()
+	if path == "" {
+		return fmt.Errorf("not in a git repository")
+	}
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
@@ -204,8 +213,15 @@ var sensitiveKeys = []string{
 }
 
 func writeLocalConfig() error {
-	// Ensure the .sage folder exists.
-	os.MkdirAll(".sage", 0755)
+	path := localPath()
+	if path == "" {
+		return fmt.Errorf("not in a git repository")
+	}
+
+	// Ensure the .git/.sage folder exists.
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
 
 	// Remove sensitive keys before saving.
 	for _, naughtyKey := range sensitiveKeys {
@@ -220,7 +236,7 @@ func writeLocalConfig() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(localPath(), b, 0644)
+	return os.WriteFile(path, b, 0644)
 }
 
 // encryptValue encrypts sensitive configuration values

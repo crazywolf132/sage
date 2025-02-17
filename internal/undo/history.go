@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+
+	"github.com/crazywolf132/sage/internal/git"
 )
 
 // Operation represents a Git operation that can be undone
@@ -66,7 +69,12 @@ func (h *History) GetOperations(category string, since time.Time) []Operation {
 
 // Save persists the history to disk
 func (h *History) Save(repoPath string) error {
-	historyPath := filepath.Join(repoPath, ".sage", "undo_history.json")
+	g := git.NewShellGit()
+	gitDir, err := g.Run("rev-parse", "--git-dir")
+	if err != nil {
+		return fmt.Errorf("not in a git repository: %w", err)
+	}
+	historyPath := filepath.Join(strings.TrimSpace(gitDir), ".sage", "undo_history.json")
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(historyPath), 0755); err != nil {
@@ -87,7 +95,12 @@ func (h *History) Save(repoPath string) error {
 
 // Load reads the history from disk
 func (h *History) Load(repoPath string) error {
-	historyPath := filepath.Join(repoPath, ".sage", "undo_history.json")
+	g := git.NewShellGit()
+	gitDir, err := g.Run("rev-parse", "--git-dir")
+	if err != nil {
+		return fmt.Errorf("not in a git repository: %w", err)
+	}
+	historyPath := filepath.Join(strings.TrimSpace(gitDir), ".sage", "undo_history.json")
 
 	data, err := os.ReadFile(historyPath)
 	if err != nil {

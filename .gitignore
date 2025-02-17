@@ -38,9 +38,4 @@ dist/
 
 # Test coverage
 coverage.txt
-coverage.html 
-
-# Local sage configuration
-# Note: If you want to commit your .sage directory, you can use:
-# git add -f .sage/
-.sage/
+coverage.html
