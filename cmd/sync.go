@@ -10,8 +10,6 @@ import (
 var (
 	syncAbort    bool
 	syncContinue bool
-	syncForce    bool
-	syncNoStash  bool
 	syncNoPush   bool
 	syncDryRun   bool
 	syncVerbose  bool
@@ -58,15 +56,9 @@ Advanced Options:
 			return ui.NewError("Hint: Use either --abort to start over or --continue after fixing conflicts")
 		}
 
-		if syncNoStash && syncContinue {
-			return ui.NewError("Hint: The --no-stash option isn't needed with --continue")
-		}
-
 		// Run the sync operation with all options
 		opts := app.SyncOptions{
 			TargetBranch: syncTarget,
-			Force:        syncForce,
-			NoStash:      syncNoStash,
 			NoPush:       syncNoPush,
 			DryRun:       syncDryRun,
 			Verbose:      syncVerbose,
@@ -95,14 +87,12 @@ func init() {
 	syncCmd.Flags().BoolVarP(&syncAbort, "abort", "a", false, "Start over if something goes wrong")
 
 	// Advanced flags
-	syncCmd.Flags().BoolVar(&syncNoStash, "no-stash", false, "Disable automatic stashing of changes")
 	syncCmd.Flags().BoolVar(&syncNoPush, "no-push", false, "Skip pushing changes to remote")
 	syncCmd.Flags().BoolVar(&syncDryRun, "dry-run", false, "Preview sync operations without making changes")
 	syncCmd.Flags().BoolVar(&syncVerbose, "verbose", false, "Show detailed operation logs")
 
 	// Make certain flags mutually exclusive
 	syncCmd.MarkFlagsMutuallyExclusive("abort", "continue")
-	syncCmd.MarkFlagsMutuallyExclusive("no-stash", "continue")
 	syncCmd.MarkFlagsMutuallyExclusive("dry-run", "continue")
 	syncCmd.MarkFlagsMutuallyExclusive("dry-run", "abort")
 }

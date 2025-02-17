@@ -12,8 +12,6 @@ import (
 // SyncOptions contains all options for the sync operation
 type SyncOptions struct {
 	TargetBranch string
-	Force        bool
-	NoStash      bool
 	NoPush       bool
 	DryRun       bool
 	Verbose      bool
@@ -252,10 +250,6 @@ func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 		return err
 	}
 	if hasChanges {
-		if opts.NoStash {
-			return fmt.Errorf("Uncommitted changes found. Use --no-stash to disable automatic stashing or commit your changes")
-		}
-
 		spinner.Start("Saving work in progress...")
 		stashed, stashRef, err := handleWorkingDirectory(g)
 		if err != nil {
@@ -455,23 +449,8 @@ func rebaseBranch(g git.Service, parentBranch string) error {
 }
 
 func pushChanges(g git.Service, branch string, opts SyncOptions) error {
-	if opts.Force {
-		if err := g.PushWithLease(branch); err != nil {
-			return &SyncError{
-				Type:    "push",
-				Message: fmt.Sprintf("Failed to push changes to remote: %v", err),
-			}
-		}
-		return nil
-	}
-
-	if err := g.Push(branch, false); err != nil {
-		if strings.Contains(err.Error(), "non-fast-forward") {
-			return &SyncError{
-				Type:    "diverged",
-				Message: fmt.Sprintf("Your branch %s has some changes that aren't in sync with origin/%s", branch, branch),
-			}
-		}
+	// Always use --force-with-lease for safety
+	if err := g.PushWithLease(branch); err != nil {
 		if strings.Contains(err.Error(), "no upstream branch") {
 			// Try to set up the upstream branch
 			if err := g.RunInteractive("push", "--set-upstream", "origin", branch); err != nil {
