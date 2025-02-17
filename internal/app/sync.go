@@ -277,9 +277,27 @@ func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 
 	// Check if we're on main/master branch
 	isMainBranch := curBranch == parentBranch
+
+	// Check if we need to update
+	needsUpdate := false
+
+	// First check if we're behind parent branch
+	parentBase, err := g.GetMergeBase(curBranch, parentBranch)
+	if err == nil {
+		parentHead, err := g.GetCommitHash(parentBranch)
+		if err == nil && parentBase != parentHead {
+			needsUpdate = true
+		}
+	}
+
+	// Then check if we're behind remote (if it exists)
 	behind, err := isBehindRemote(g, curBranch)
 	if err == nil && behind {
-		// 5. Integration (only if not on main/master or if behind remote)
+		needsUpdate = true
+	}
+
+	if needsUpdate {
+		// 5. Integration (only if not on main/master)
 		if !isMainBranch {
 			spinner.Start("Integrating remote changes...")
 			if err := integrateChanges(g, parentBranch, opts); err != nil {
@@ -296,7 +314,7 @@ func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 		}
 
 		// 6. Push Changes (only if not on main/master or if we have local commits)
-		if !opts.NoPush && (!isMainBranch || behind) {
+		if !opts.NoPush && !isMainBranch {
 			spinner.Start("Pushing changes...")
 			if err := pushChanges(g, curBranch, opts); err != nil {
 				spinner.StopFail()
