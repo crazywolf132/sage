@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -14,115 +13,289 @@ import (
 )
 
 var (
-	undoCount    int
-	undoCategory string
-	undoSince    string
-	undoID       string
-	showHistory  bool
-	groupBy      string
-	preview      bool
+	undoID      string
+	showHistory bool
 )
 
 var undoCmd = &cobra.Command{
-	Use:   "undo [count]",
-	Short: "Undo Git operations with precision",
-	Long: `Undo Git operations with detailed history tracking and selective undo capabilities.
+	Use:   "undo",
+	Short: "Undo your last Git operation",
+	Long: `Undo your last Git operation safely.
 
-Features:
-• Interactive operation selection with preview
-• Visual history with operation details
-• Smart grouping by type, date, or branch
-• Selective undo by operation ID
-• Time-based filtering
-• Automatic stash management
+Just run 'sage undo' and we'll help you fix your last Git operation.
+No need to remember complex Git commands - we'll handle it for you!`,
+	Example: `  # Fix your last Git operation
+  sage undo
 
-Examples:
-  sage undo                      # Interactive undo with preview
-  sage undo 3                    # Undo last 3 operations
-  sage undo --id abc123          # Undo specific operation by ID
-  sage undo --category commit    # Show only commit operations
-  sage undo --since 24h         # Show operations from last 24 hours
-  sage undo --group branch      # Group operations by branch
-  sage undo --history          # Show detailed operation history`,
+  # See what you can undo
+  sage undo --history`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		spinner := ui.NewSpinner()
 		g := git.NewShellGit()
 		s := undo.NewService(g)
 
-		// Load existing history
+		// Load history
+		spinner.Start("Looking up your recent Git operations...")
 		if err := s.LoadHistory("."); err != nil {
-			return fmt.Errorf("failed to load undo history: %w", err)
+			spinner.StopFail()
+			return fmt.Errorf("couldn't load Git history: %w", err)
 		}
+		spinner.StopSuccess()
 
-		// Parse time filter if provided
-		var since time.Time
-		if undoSince != "" {
-			duration, err := time.ParseDuration(undoSince)
-			if err != nil {
-				return fmt.Errorf("invalid time duration: %w", err)
-			}
-			since = time.Now().Add(-duration)
-		}
-
-		// Get filtered operations
-		ops := s.GetHistory().GetOperations(undoCategory, since)
+		// Get operations
+		ops := s.GetHistory().GetOperations("", time.Time{})
 		if len(ops) == 0 {
-			fmt.Printf("\n%s No operations found matching the criteria\n\n", ui.Yellow("!"))
-			fmt.Printf("Try:\n")
-			fmt.Printf("• Removing filters (--category, --since)\n")
-			fmt.Printf("• Using 'sage undo --history' to see all operations\n")
-			fmt.Printf("• Checking if you're in the correct repository\n\n")
+			fmt.Printf("\n%s Nothing to undo yet\n", ui.Yellow("!"))
+			fmt.Printf("\nTip: Use Sage commands like 'sage commit' or 'sage sync' first.\n")
+			fmt.Printf("Then you can use 'sage undo' if something goes wrong.\n\n")
 			return nil
 		}
 
 		// Just show history if requested
 		if showHistory {
-			printOperations(ops, groupBy)
+			showUndoHistory(ops)
 			return nil
 		}
 
 		// Handle undo by ID
 		if undoID != "" {
-			if preview {
-				if err := previewUndo(s, []undo.Operation{findOperationByID(ops, undoID)}); err != nil {
-					return err
-				}
-			}
-			return s.UndoOperation(undoID)
+			return handleUndoByID(s, ops, undoID)
 		}
 
-		// Handle undo by count from args
-		if len(args) > 0 {
-			count, err := strconv.Atoi(args[0])
-			if err != nil {
-				return fmt.Errorf("invalid count: %w", err)
-			}
-			undoCount = count
-		}
-
-		// If count specified, undo that many operations
-		if undoCount > 0 {
-			if preview {
-				if err := previewUndo(s, ops[:undoCount]); err != nil {
-					return err
-				}
-			}
-			return s.UndoLast(undoCount)
-		}
-
-		// Otherwise, show interactive selector
-		return selectAndUndoOperation(s, ops)
+		// Interactive mode - show last operation with clear preview
+		return handleInteractiveUndo(s, ops)
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(undoCmd)
-	undoCmd.Flags().IntVarP(&undoCount, "count", "n", 0, "Number of operations to undo")
-	undoCmd.Flags().StringVarP(&undoCategory, "category", "c", "", "Filter by category (commit, merge, rebase)")
-	undoCmd.Flags().StringVarP(&undoSince, "since", "s", "", "Show operations since duration (e.g., 24h, 7d)")
-	undoCmd.Flags().StringVarP(&undoID, "id", "i", "", "Undo specific operation by ID")
-	undoCmd.Flags().BoolVarP(&showHistory, "history", "H", false, "Show operation history without undoing")
-	undoCmd.Flags().StringVarP(&groupBy, "group", "g", "date", "Group operations by: date, type, branch")
-	undoCmd.Flags().BoolVarP(&preview, "preview", "p", true, "Show preview of changes before undoing")
+	undoCmd.Flags().StringVarP(&undoID, "id", "i", "", "Undo a specific operation by ID")
+	undoCmd.Flags().BoolVarP(&showHistory, "history", "H", false, "See what you can undo")
+}
+
+func handleInteractiveUndo(s *undo.Service, ops []undo.Operation) error {
+	lastOp := ops[0] // Most recent operation
+
+	// Header
+	fmt.Printf("\n%s\n\n", ui.Bold("Let's undo your last Git operation"))
+
+	// Show the operation details in a clean format
+	fmt.Printf("%s %s\n", ui.Yellow("What happened:"), lastOp.Description)
+	fmt.Printf("%s %s\n", ui.Yellow("When:"), formatTimestamp(lastOp.Timestamp))
+
+	// Show context based on operation type
+	switch lastOp.Category {
+	case "commit":
+		if len(lastOp.Metadata.Files) > 0 {
+			fmt.Printf("%s %s\n", ui.Yellow("Changed files:"), strings.Join(lastOp.Metadata.Files, ", "))
+		}
+	case "merge", "rebase":
+		if lastOp.Metadata.Branch != "" {
+			fmt.Printf("%s %s\n", ui.Yellow("On branch:"), lastOp.Metadata.Branch)
+		}
+	}
+	fmt.Println()
+
+	// Show what will happen in a clear, action-oriented way
+	fmt.Printf("%s\n", ui.Bold("Here's what we'll do:"))
+	switch lastOp.Category {
+	case "commit":
+		fmt.Printf("1. Safely undo your last commit\n")
+		fmt.Printf("2. Keep all your changes staged\n")
+		fmt.Printf("3. Let you commit again when ready\n")
+	case "merge":
+		fmt.Printf("1. Cancel the problematic merge\n")
+		fmt.Printf("2. Return your branch to its previous state\n")
+		fmt.Printf("3. Clean up any temporary merge files\n")
+	case "rebase":
+		fmt.Printf("1. Stop the rebase operation\n")
+		fmt.Printf("2. Put your branch back where it was\n")
+		fmt.Printf("3. Preserve all your commits\n")
+	case "branch":
+		fmt.Printf("1. Restore your deleted branch\n")
+		fmt.Printf("2. Recover all associated commits\n")
+		fmt.Printf("3. Keep your current branch unchanged\n")
+	}
+	fmt.Println()
+
+	// Safety check
+	fmt.Printf("%s\n", ui.Bold("Safety Check:"))
+	fmt.Printf("• Your files won't be lost\n")
+	fmt.Printf("• Your other branches won't be affected\n")
+	fmt.Printf("• You can redo this operation if needed\n")
+	fmt.Println()
+
+	// Ask for confirmation
+	var proceed bool
+	prompt := &survey.Confirm{
+		Message: "Ready to undo?",
+		Default: true,
+	}
+	if err := survey.AskOne(prompt, &proceed); err != nil {
+		return err
+	}
+	if !proceed {
+		fmt.Printf("\n%s Operation cancelled. Your repository is unchanged.\n\n", ui.Yellow("!"))
+		return nil
+	}
+
+	// Show progress
+	spinner := ui.NewSpinner()
+	spinner.Start("Undoing last operation safely...")
+
+	if err := s.UndoOperation(lastOp.ID); err != nil {
+		spinner.StopFail()
+		return fmt.Errorf("couldn't undo the operation: %v", err)
+	}
+
+	spinner.StopSuccess()
+
+	// Show success and next steps
+	fmt.Printf("\n%s Success! Here's what changed:\n", ui.Green("✓"))
+	switch lastOp.Category {
+	case "commit":
+		fmt.Printf("• Your last commit was undone\n")
+		fmt.Printf("• Your changes are ready to commit again\n")
+		fmt.Printf("\n%s Try these commands:\n", ui.Bold("Next Steps"))
+		fmt.Printf("• %s to see your changes\n", ui.Blue("git status"))
+		fmt.Printf("• %s to commit when ready\n", ui.Blue("sage commit"))
+	case "merge":
+		fmt.Printf("• The merge was cancelled\n")
+		fmt.Printf("• Your branch is back to normal\n")
+		fmt.Printf("\n%s Try these commands:\n", ui.Bold("Next Steps"))
+		fmt.Printf("• %s to see your branch status\n", ui.Blue("git status"))
+		fmt.Printf("• %s to try merging again\n", ui.Blue("sage sync"))
+	case "rebase":
+		fmt.Printf("• The rebase was cancelled\n")
+		fmt.Printf("• Your branch is back to its original state\n")
+		fmt.Printf("\n%s Try these commands:\n", ui.Bold("Next Steps"))
+		fmt.Printf("• %s to see your branch status\n", ui.Blue("git status"))
+		fmt.Printf("• %s to update your branch differently\n", ui.Blue("sage sync"))
+	case "branch":
+		fmt.Printf("• Your branch was restored\n")
+		fmt.Printf("• All commits were recovered\n")
+		fmt.Printf("\n%s Try these commands:\n", ui.Bold("Next Steps"))
+		fmt.Printf("• %s to switch to the restored branch\n", ui.Blue("sage switch <branch>"))
+		fmt.Printf("• %s to see all branches\n", ui.Blue("git branch"))
+	}
+	fmt.Println()
+
+	return nil
+}
+
+func handleUndoByID(s *undo.Service, ops []undo.Operation, id string) error {
+	// Find the operation
+	op := findOperationByID(ops, id)
+	if op.ID == "" {
+		fmt.Printf("\n%s Couldn't find that operation\n", ui.Yellow("!"))
+		fmt.Printf("\nTip: Use 'sage undo --history' to see available operations\n")
+		fmt.Printf("Or just run 'sage undo' to fix your last operation\n\n")
+		return nil
+	}
+
+	// Show what we found
+	fmt.Printf("\n%s Found this operation:\n\n", ui.Bold("Undo"))
+	fmt.Printf("%s %s\n", ui.Yellow("What:"), op.Description)
+	fmt.Printf("%s %s\n", ui.Yellow("When:"), formatTimestamp(op.Timestamp))
+	if op.Metadata.Branch != "" {
+		fmt.Printf("%s %s\n", ui.Yellow("Branch:"), op.Metadata.Branch)
+	}
+	fmt.Println()
+
+	// Confirm
+	var proceed bool
+	prompt := &survey.Confirm{
+		Message: "Undo this operation?",
+		Default: true,
+	}
+	if err := survey.AskOne(prompt, &proceed); err != nil {
+		return err
+	}
+	if !proceed {
+		fmt.Printf("\n%s Operation cancelled. Your repository is unchanged.\n\n", ui.Yellow("!"))
+		return nil
+	}
+
+	// Show progress
+	spinner := ui.NewSpinner()
+	spinner.Start("Undoing operation safely...")
+
+	if err := s.UndoOperation(op.ID); err != nil {
+		spinner.StopFail()
+		return fmt.Errorf("couldn't undo the operation: %v", err)
+	}
+
+	spinner.StopSuccess()
+	fmt.Printf("\n%s Operation undone successfully!\n", ui.Green("✓"))
+	fmt.Printf("\nTip: Run 'git status' to see your repository's current state\n\n")
+	return nil
+}
+
+func showUndoHistory(ops []undo.Operation) {
+	fmt.Printf("\n%s\n\n", ui.Bold("Recent Git Operations"))
+
+	for i, op := range ops {
+		if i >= 5 { // Show only last 5 operations
+			break
+		}
+
+		fmt.Printf("%s %s\n", ui.Yellow("•"), op.Description)
+		fmt.Printf("  %s %s\n", ui.Gray("Type:"), strings.Title(op.Category))
+		fmt.Printf("  %s %s\n", ui.Gray("When:"), formatTimestamp(op.Timestamp))
+		fmt.Printf("  %s %s\n", ui.Gray("ID:"), op.ID[:8])
+
+		// Show relevant context based on operation type
+		switch op.Category {
+		case "commit":
+			if len(op.Metadata.Files) > 0 {
+				files := op.Metadata.Files
+				if len(files) > 3 {
+					files = append(files[:2], "...")
+				}
+				fmt.Printf("  %s %s\n", ui.Gray("Files:"), strings.Join(files, ", "))
+			}
+		case "merge", "rebase":
+			if op.Metadata.Branch != "" {
+				fmt.Printf("  %s %s\n", ui.Gray("Branch:"), op.Metadata.Branch)
+			}
+		}
+		fmt.Println()
+	}
+
+	if len(ops) > 5 {
+		fmt.Printf("... and %d more operations\n", len(ops)-5)
+	}
+
+	fmt.Printf("\n%s\n", ui.Bold("How to undo:"))
+	fmt.Printf("1. Just run: %s to undo your last operation\n", ui.Blue("sage undo"))
+	fmt.Printf("2. Or undo a specific one: %s\n", ui.Blue("sage undo --id <ID>"))
+	fmt.Println()
+}
+
+func formatTimestamp(t time.Time) string {
+	duration := time.Since(t)
+	switch {
+	case duration < time.Minute:
+		return "just now"
+	case duration < time.Hour:
+		mins := int(duration.Minutes())
+		return fmt.Sprintf("%d minute%s ago", mins, pluralize(mins))
+	case duration < 24*time.Hour:
+		hours := int(duration.Hours())
+		return fmt.Sprintf("%d hour%s ago", hours, pluralize(hours))
+	case duration < 7*24*time.Hour:
+		days := int(duration.Hours() / 24)
+		return fmt.Sprintf("%d day%s ago", days, pluralize(days))
+	default:
+		return t.Format("Mon Jan 02 15:04:05")
+	}
+}
+
+func pluralize(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 func findOperationByID(ops []undo.Operation, id string) undo.Operation {
@@ -132,183 +305,4 @@ func findOperationByID(ops []undo.Operation, id string) undo.Operation {
 		}
 	}
 	return undo.Operation{}
-}
-
-func printOperations(ops []undo.Operation, grouping string) {
-	fmt.Printf("\n%s %s\n", ui.Bold(ui.Sage("Undo History")), ui.Gray(fmt.Sprintf("(%d operations)", len(ops))))
-
-	switch grouping {
-	case "type":
-		printOperationsByType(ops)
-	case "branch":
-		printOperationsByBranch(ops)
-	default:
-		printOperationsByDate(ops)
-	}
-}
-
-func printOperationsByDate(ops []undo.Operation) {
-	var lastDate string
-	for _, op := range ops {
-		curDate := op.Timestamp.Format("Mon Jan 02 2006")
-		if curDate != lastDate {
-			if lastDate != "" {
-				fmt.Println()
-			}
-			fmt.Printf("%s %s\n", ui.Blue("Date:"), ui.Bold(curDate))
-			lastDate = curDate
-		}
-		printOperation(op)
-	}
-	fmt.Println()
-}
-
-func printOperationsByType(ops []undo.Operation) {
-	typeGroups := make(map[string][]undo.Operation)
-	for _, op := range ops {
-		typeGroups[op.Category] = append(typeGroups[op.Category], op)
-	}
-
-	for _, category := range []string{"commit", "merge", "rebase", "stash"} {
-		if ops, ok := typeGroups[category]; ok {
-			fmt.Printf("\n%s %s\n", ui.Blue("Type:"), ui.Bold(strings.Title(category)))
-			for _, op := range ops {
-				printOperation(op)
-			}
-		}
-	}
-	fmt.Println()
-}
-
-func printOperationsByBranch(ops []undo.Operation) {
-	branchGroups := make(map[string][]undo.Operation)
-	for _, op := range ops {
-		branch := op.Metadata.Branch
-		if branch == "" {
-			branch = "unknown"
-		}
-		branchGroups[branch] = append(branchGroups[branch], op)
-	}
-
-	for branch, ops := range branchGroups {
-		fmt.Printf("\n%s %s\n", ui.Blue("Branch:"), ui.Bold(branch))
-		for _, op := range ops {
-			printOperation(op)
-		}
-	}
-	fmt.Println()
-}
-
-func printOperation(op undo.Operation) {
-	// Format operation line with appropriate symbol
-	var symbol string
-	switch op.Category {
-	case "commit":
-		symbol = "●"
-	case "merge":
-		symbol = "◆"
-	case "rebase":
-		symbol = "◇"
-	case "stash":
-		symbol = "⬡"
-	default:
-		symbol = "○"
-	}
-
-	fmt.Printf(" %s %s %s %s\n",
-		ui.Sage(symbol),
-		ui.Yellow(op.ID[:8]),
-		ui.Gray(op.Timestamp.Format("15:04:05")),
-		op.Description,
-	)
-
-	// Show metadata if available
-	if op.Metadata.Branch != "" {
-		fmt.Printf("   %s %s\n", ui.Gray("Branch:"), op.Metadata.Branch)
-	}
-	if len(op.Metadata.Files) > 0 {
-		fileList := op.Metadata.Files
-		if len(fileList) > 3 {
-			fileList = append(fileList[:3], fmt.Sprintf("and %d more...", len(fileList)-3))
-		}
-		fmt.Printf("   %s %s\n", ui.Gray("Files:"), strings.Join(fileList, ", "))
-	}
-	if op.Metadata.Message != "" {
-		msg := op.Metadata.Message
-		if len(msg) > 80 {
-			msg = msg[:77] + "..."
-		}
-		fmt.Printf("   %s %s\n", ui.Gray("Message:"), msg)
-	}
-}
-
-func previewUndo(s *undo.Service, ops []undo.Operation) error {
-	if len(ops) == 0 {
-		return nil
-	}
-
-	fmt.Printf("\n%s The following operations will be undone:\n", ui.Bold(ui.Sage("Preview")))
-	for i, op := range ops {
-		fmt.Printf("\n%d. ", i+1)
-		printOperation(op)
-	}
-
-	var confirm bool
-	prompt := &survey.Confirm{
-		Message: "Continue with undo?",
-		Default: false,
-	}
-	if err := survey.AskOne(prompt, &confirm); err != nil {
-		return fmt.Errorf("operation cancelled: %w", err)
-	}
-
-	if !confirm {
-		return fmt.Errorf("operation cancelled by user")
-	}
-
-	return nil
-}
-
-func selectAndUndoOperation(s *undo.Service, ops []undo.Operation) error {
-	// Create options for selection
-	options := make([]string, len(ops))
-	for i, op := range ops {
-		var details string
-		if op.Metadata.Branch != "" {
-			details = fmt.Sprintf(" on %s", op.Metadata.Branch)
-		}
-		if len(op.Metadata.Files) > 0 {
-			details += fmt.Sprintf(" (%d files)", len(op.Metadata.Files))
-		}
-
-		options[i] = fmt.Sprintf("[%s] %s: %s%s",
-			op.ID[:8],
-			op.Timestamp.Format("2006-01-02 15:04:05"),
-			op.Description,
-			details,
-		)
-	}
-
-	// Show interactive selector
-	var selected string
-	prompt := &survey.Select{
-		Message:  "Select operation to undo:",
-		Options:  options,
-		PageSize: 15,
-	}
-	if err := survey.AskOne(prompt, &selected); err != nil {
-		return fmt.Errorf("operation cancelled: %w", err)
-	}
-
-	// Extract operation ID from selection
-	opID := strings.Split(strings.Trim(strings.Split(selected, "]")[0], "["), " ")[0]
-
-	// Show preview if enabled
-	if preview {
-		if err := previewUndo(s, []undo.Operation{findOperationByID(ops, opID)}); err != nil {
-			return err
-		}
-	}
-
-	return s.UndoOperation(opID)
 }
