@@ -50,6 +50,17 @@ func Get(key string, useLocal bool) string {
 	}
 	// Otherwise check global
 	if val, ok := globalData[key]; ok {
+		// Check if this is a sensitive key that needs decryption
+		for _, k := range sensitiveKeys {
+			if strings.HasPrefix(strings.ToLower(key), strings.ToLower(k)) {
+				decrypted, err := decryptValue(val)
+				if err != nil {
+					ui.Warnf("Failed to decrypt sensitive value: %v\n", err)
+					return ""
+				}
+				return decrypted
+			}
+		}
 		return val
 	}
 	return ""

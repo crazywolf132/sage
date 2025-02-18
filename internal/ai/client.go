@@ -70,9 +70,16 @@ func NewClient(baseURL string) *Client {
 		}
 	}
 
-	apiKey := os.Getenv("OPENAI_API_KEY")
+	// Check for API key in order of priority:
+	// 1. Local config (if in a git repo)
+	// 2. Global config
+	// 3. Environment variable
+	apiKey := config.Get("ai.api_key", true) // Try local config first
 	if apiKey == "" {
-		apiKey = config.Get("ai.api_key", false)
+		apiKey = config.Get("ai.api_key", false) // Try global config
+		if apiKey == "" {
+			apiKey = os.Getenv("OPENAI_API_KEY") // Finally, try environment
+		}
 	}
 
 	return &Client{
@@ -85,7 +92,11 @@ func NewClient(baseURL string) *Client {
 // GenerateCommitMessage sends the diff and a prompt to the AI provider and returns a commit message.
 func (c *Client) GenerateCommitMessage(diff string) (string, error) {
 	if c.APIKey == "" {
-		return "", fmt.Errorf("API key not found. Set OPENAI_API_KEY environment variable or configure in .sage/config.toml")
+		return "", fmt.Errorf("AI features require an API key. You can set it by either:\n" +
+			"1. Setting the OPENAI_API_KEY environment variable\n" +
+			"2. Running: sage config set ai.api_key <your-api-key>\n" +
+			"3. If using a different AI provider, also set the base URL: sage config set ai.base_url <api-url>\n\n" +
+			"Note: If you've already set the API key and are seeing this error, try setting it again as there might have been an issue with the encryption.")
 	}
 
 	// OpenAI (or compatible) providers have a maximum allowed content length.
@@ -178,9 +189,18 @@ Respond with ONLY the commit message, no additional text or formatting.`
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusUnauthorized {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("invalid API key or unauthorized request. Please check your API key and provider settings:\n"+
+			"• Current API URL: %s\n"+
+			"• To update API key: sage config set ai.api_key <your-api-key>\n"+
+			"• To update API URL: sage config set ai.base_url <api-url>\n"+
+			"Provider error: %s", c.BaseURL, string(bodyBytes))
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("unexpected status code: %d. Response: %s", resp.StatusCode, string(bodyBytes))
+		return "", fmt.Errorf("API request failed (status %d). Provider response: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var genResp GenerateResponse

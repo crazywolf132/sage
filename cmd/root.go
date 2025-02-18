@@ -4,12 +4,20 @@ import (
 	"os"
 
 	"github.com/crazywolf132/sage/internal/config"
-	"github.com/crazywolf132/sage/internal/gh"
+	"github.com/crazywolf132/sage/internal/git"
 	"github.com/crazywolf132/sage/internal/ui"
 	"github.com/crazywolf132/sage/internal/update"
 	"github.com/crazywolf132/sage/internal/version"
 	"github.com/spf13/cobra"
 )
+
+// Commands that don't require GitHub functionality
+var noGitHubCommands = map[string]bool{
+	"config":     true,
+	"completion": true,
+	"help":       true,
+	"version":    true,
+}
 
 var rootCmd = &cobra.Command{
 	Use:   "sage",
@@ -40,14 +48,17 @@ To enable shell completion:
 			ui.Warnf("Failed to load config: %v\n", err)
 		}
 
-		// Sync git config for experimental features
-		if err := config.SyncGitConfigFeatures(); err != nil {
-			ui.Warnf("Failed to sync git config features: %v\n", err)
+		// Only sync git config features if we're in a git repository
+		g := git.NewShellGit()
+		inRepo, _ := g.IsRepo()
+		if inRepo {
+			if err := config.SyncGitConfigFeatures(); err != nil {
+				ui.Warnf("Failed to sync git config features: %v\n", err)
+			}
 		}
 
-		// Check for updates before running any command
-		ghClient := gh.NewClient()
-		_ = update.CheckForUpdates(ghClient, version.Get())
+		// Check for updates using the public GitHub API
+		_ = update.CheckForUpdatesPublic(version.Get())
 	},
 }
 

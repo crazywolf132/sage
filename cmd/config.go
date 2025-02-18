@@ -24,8 +24,16 @@ var configGetCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Short: "Get a config value",
 	Long: `Get a configuration value. By default, reads from the global config.
-Use --local to read from the local repository config instead.`,
+Use --local to read from the local repository config instead (only works inside git repositories).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if useLocalConfig {
+			g := git.NewShellGit()
+			inRepo, _ := g.IsRepo()
+			if !inRepo {
+				return fmt.Errorf("--local flag can only be used inside a git repository")
+			}
+		}
+
 		val := config.Get(args[0], useLocalConfig)
 		if val == "" {
 			fmt.Println(ui.Gray("not set"))
@@ -41,10 +49,18 @@ var configSetCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(2),
 	Short: "Set a config value",
 	Long: `Set a configuration value. By default, saves to the global config.
-Use --local to save to the local repository config instead.`,
+Use --local to save to the local repository config instead (only works inside git repositories).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if useLocalConfig {
+			g := git.NewShellGit()
+			inRepo, _ := g.IsRepo()
+			if !inRepo {
+				return fmt.Errorf("--local flag can only be used inside a git repository")
+			}
+		}
+
 		key, value := args[0], args[1]
-		err := config.Set(key, value, useLocalConfig)
+		err := config.Set(key, value, !useLocalConfig)
 		if err != nil {
 			return err
 		}
@@ -128,8 +144,16 @@ var configUnsetCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Short: "Remove a config value",
 	Long: `Remove a configuration value. By default, removes from the global config.
-Use --local to remove from the local repository config instead.`,
+Use --local to remove from the local repository config instead (only works inside git repositories).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if useLocalConfig {
+			g := git.NewShellGit()
+			inRepo, _ := g.IsRepo()
+			if !inRepo {
+				return fmt.Errorf("--local flag can only be used inside a git repository")
+			}
+		}
+
 		key := args[0]
 		err := config.Unset(key, !useLocalConfig)
 		if err != nil {
