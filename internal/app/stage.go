@@ -8,6 +8,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/crazywolf132/sage/internal/ai"
+	"github.com/crazywolf132/sage/internal/config"
 	"github.com/crazywolf132/sage/internal/git"
 	"github.com/crazywolf132/sage/internal/ui"
 )
@@ -109,7 +110,7 @@ func StageFiles(g git.Service, patterns []string, useAI bool) error {
 
 	if useAI {
 		// Initialize AI client
-		client := ai.NewClient("")
+		client := ai.NewClient("", ai.NewConfigAdapter(config.Get))
 		if client.APIKey == "" {
 			fmt.Printf("%s No OpenAI API key found, falling back to manual selection\n", ui.Yellow("!"))
 			return StageFiles(g, patterns, false)

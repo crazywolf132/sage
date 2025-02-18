@@ -39,7 +39,7 @@ func UpdatePR(ghc gh.Client, g git.Service, num int, opts PRUpdateOptions) error
 		}
 
 		// Initialize AI client
-		client := ai.NewClient(config.Get("ai_base_url", false))
+		client := ai.NewClient("", ai.NewConfigAdapter(config.Get))
 		if client.APIKey == "" {
 			return fmt.Errorf("AI API key not configured. Please set it using 'sage config set ai_api_key YOUR_KEY'")
 		}

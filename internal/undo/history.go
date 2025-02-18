@@ -34,6 +34,7 @@ type Operation struct {
 type History struct {
 	Operations []Operation `json:"operations"`
 	MaxSize    int         `json:"max_size"` // Maximum number of operations to track
+	git        git.Service
 }
 
 // NewHistory creates a new history tracker
@@ -41,7 +42,14 @@ func NewHistory() *History {
 	return &History{
 		Operations: make([]Operation, 0),
 		MaxSize:    100, // Default to tracking last 100 operations
+		git:        git.NewShellGit(),
 	}
+}
+
+// WithGitService sets the git service for the history
+func (h *History) WithGitService(g git.Service) *History {
+	h.git = g
+	return h
 }
 
 // AddOperation adds a new operation to the history
@@ -69,8 +77,10 @@ func (h *History) GetOperations(category string, since time.Time) []Operation {
 
 // Save persists the history to disk
 func (h *History) Save(repoPath string) error {
-	g := git.NewShellGit()
-	gitDir, err := g.Run("rev-parse", "--git-dir")
+	if h.git == nil {
+		h.git = git.NewShellGit()
+	}
+	gitDir, err := h.git.Run("rev-parse", "--git-dir")
 	if err != nil {
 		return fmt.Errorf("not in a git repository: %w", err)
 	}
@@ -95,8 +105,10 @@ func (h *History) Save(repoPath string) error {
 
 // Load reads the history from disk
 func (h *History) Load(repoPath string) error {
-	g := git.NewShellGit()
-	gitDir, err := g.Run("rev-parse", "--git-dir")
+	if h.git == nil {
+		h.git = git.NewShellGit()
+	}
+	gitDir, err := h.git.Run("rev-parse", "--git-dir")
 	if err != nil {
 		return fmt.Errorf("not in a git repository: %w", err)
 	}

@@ -15,6 +15,9 @@ var (
 	versionString string
 )
 
+// readBuildInfo is a package variable that can be overridden in tests
+var readBuildInfo = debug.ReadBuildInfo
+
 // Get returns the version string, determining it on first call
 func Get() string {
 	once.Do(func() {
@@ -31,7 +34,7 @@ func determineVersion() string {
 	}
 
 	// Try to get version from build info (works for go install)
-	if info, ok := debug.ReadBuildInfo(); ok {
+	if info, ok := readBuildInfo(); ok {
 		// First check the main module version
 		if info.Main.Version != "" && info.Main.Version != "(devel)" {
 			return strings.TrimPrefix(info.Main.Version, "v")

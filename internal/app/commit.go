@@ -7,6 +7,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/crazywolf132/sage/internal/ai"
+	"github.com/crazywolf132/sage/internal/config"
 	"github.com/crazywolf132/sage/internal/git"
 	"github.com/crazywolf132/sage/internal/ui"
 )
@@ -112,7 +113,7 @@ func Commit(g git.Service, opts CommitOptions) (CommitResult, error) {
 			if err != nil {
 				return result, fmt.Errorf("failed to get diff: %w", err)
 			}
-			client := ai.NewClient("")
+			client := ai.NewClient("", ai.NewConfigAdapter(config.Get))
 			if client.APIKey == "" {
 				return result, fmt.Errorf("AI features require an OpenAI API key")
 			}
