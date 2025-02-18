@@ -8,15 +8,34 @@ import (
 	"net/http"
 	"os"
 	"strings"
-
-	"github.com/crazywolf132/sage/internal/config"
 )
+
+// ConfigGetter is an interface for getting config values
+type ConfigGetter interface {
+	Get(key string, required bool) string
+}
+
+// configAdapter adapts a config.Get function to the ConfigGetter interface
+type configAdapter struct {
+	getFn func(key string, useLocal bool) string
+}
+
+func (c *configAdapter) Get(key string, required bool) string {
+	return c.getFn(key, false) // Always use global config for AI settings
+}
+
+// NewConfigAdapter creates a new ConfigGetter from a config.Get function
+func NewConfigAdapter(getFn func(key string, useLocal bool) string) ConfigGetter {
+	return &configAdapter{getFn: getFn}
+}
 
 // Client is used to send requests to an AI provider following the OpenAI Chat API spec.
 type Client struct {
-	BaseURL string
-	APIKey  string
-	Model   string
+	BaseURL    string
+	APIKey     string
+	Model      string
+	config     ConfigGetter
+	httpClient *http.Client
 }
 
 // GenerateRequest matches the minimal payload expected by the Chat API.
@@ -56,7 +75,7 @@ type Usage struct {
 }
 
 // NewClient creates a new Ollama client.
-func NewClient(baseURL string) *Client {
+func NewClient(baseURL string, config ConfigGetter) *Client {
 	model := config.Get("ai.model", false)
 	if model == "" {
 		model = "gpt-4o"
@@ -83,10 +102,17 @@ func NewClient(baseURL string) *Client {
 	}
 
 	return &Client{
-		BaseURL: baseURL,
-		APIKey:  apiKey,
-		Model:   model,
+		BaseURL:    baseURL,
+		APIKey:     apiKey,
+		Model:      model,
+		config:     config,
+		httpClient: &http.Client{},
 	}
+}
+
+// SetHTTPClient sets a custom HTTP client for testing
+func (c *Client) SetHTTPClient(client *http.Client) {
+	c.httpClient = client
 }
 
 // GenerateCommitMessage sends the diff and a prompt to the AI provider and returns a commit message.
@@ -182,8 +208,7 @@ Respond with ONLY the commit message, no additional text or formatting.`
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	}
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to make request: %w", err)
 	}
@@ -316,8 +341,7 @@ Generate a PR description following the above structure and guidelines. Use prop
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	}
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to make request: %w", err)
 	}
@@ -356,6 +380,7 @@ Generate a PR description following the above structure and guidelines. Use prop
 	return strings.TrimSpace(description), nil
 }
 
+// GeneratePRLabels sends the diff and commits to generate PR labels
 func (c *Client) GeneratePRLabels(commits, diff string) ([]string, error) {
 	prompt := fmt.Sprintf(`Based on these changes, suggest appropriate GitHub PR labels from this list ONLY:
 - feature
@@ -405,6 +430,7 @@ Return ONLY the exact label names from the list above, separated by commas. Do n
 	return cleanedLabels, nil
 }
 
+// GeneratePRTitle sends the diff and commits to generate a PR title
 func (c *Client) GeneratePRTitle(commits, diff string) (string, error) {
 	prompt := fmt.Sprintf(`Based on these commits and changes, generate a PR title that follows the Conventional Commits specification.
 
