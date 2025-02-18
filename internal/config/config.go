@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/crazywolf132/sage/internal/git"
 	"github.com/crazywolf132/sage/internal/ui"
+	"golang.org/x/crypto/pbkdf2"
 )
 
 var (
@@ -250,14 +252,40 @@ func writeLocalConfig() error {
 	return os.WriteFile(path, b, 0644)
 }
 
-// encryptValue encrypts sensitive configuration values
-func encryptValue(value string) (string, error) {
-	key := make([]byte, 32) // AES-256
-	if _, err := io.ReadFull(rand.Reader, key); err != nil {
-		return "", fmt.Errorf("failed to generate encryption key: %w", err)
+// getMasterKey derives a master encryption key from system-specific data
+func getMasterKey() ([]byte, error) {
+	// Get system-specific data to derive the key from
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	block, err := aes.NewCipher(key)
+	// Get machine ID if available (usually in /etc/machine-id or /var/lib/dbus/machine-id)
+	var machineID string
+	if runtime.GOOS != "windows" {
+		if id, err := os.ReadFile("/etc/machine-id"); err == nil {
+			machineID = string(id)
+		} else if id, err := os.ReadFile("/var/lib/dbus/machine-id"); err == nil {
+			machineID = string(id)
+		}
+	}
+
+	// Combine system data into a unique string
+	systemData := fmt.Sprintf("%s:%s:%s:%s", homeDir, runtime.GOOS, runtime.GOARCH, machineID)
+
+	// Use PBKDF2 to derive a secure key
+	salt := []byte("sage-config-v1") // Version this so we can change it if needed
+	return pbkdf2.Key([]byte(systemData), salt, 100000, 32, sha256.New), nil
+}
+
+// encryptValue encrypts sensitive configuration values using AES-GCM
+func encryptValue(value string) (string, error) {
+	masterKey, err := getMasterKey()
+	if err != nil {
+		return "", fmt.Errorf("failed to get master key: %w", err)
+	}
+
+	block, err := aes.NewCipher(masterKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to create cipher: %w", err)
 	}
@@ -267,31 +295,33 @@ func encryptValue(value string) (string, error) {
 		return "", fmt.Errorf("failed to create GCM: %w", err)
 	}
 
+	// Generate a random nonce
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return "", fmt.Errorf("failed to generate nonce: %w", err)
 	}
 
-	// Store key alongside encrypted value
+	// Encrypt and authenticate the value
 	ciphertext := gcm.Seal(nonce, nonce, []byte(value), nil)
-	return base64.StdEncoding.EncodeToString(append(key, ciphertext...)), nil
+
+	// Encode the result
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
 // decryptValue decrypts sensitive configuration values
 func decryptValue(encrypted string) (string, error) {
+	masterKey, err := getMasterKey()
+	if err != nil {
+		return "", fmt.Errorf("failed to get master key: %w", err)
+	}
+
+	// Decode the base64 data
 	data, err := base64.StdEncoding.DecodeString(encrypted)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode encrypted value: %w", err)
 	}
 
-	if len(data) < 32 {
-		return "", fmt.Errorf("invalid encrypted value format")
-	}
-
-	key := data[:32]
-	ciphertext := data[32:]
-
-	block, err := aes.NewCipher(key)
+	block, err := aes.NewCipher(masterKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to create cipher: %w", err)
 	}
@@ -301,16 +331,17 @@ func decryptValue(encrypted string) (string, error) {
 		return "", fmt.Errorf("failed to create GCM: %w", err)
 	}
 
-	if len(ciphertext) < gcm.NonceSize() {
+	if len(data) < gcm.NonceSize() {
 		return "", fmt.Errorf("invalid ciphertext length")
 	}
 
-	nonce := ciphertext[:gcm.NonceSize()]
-	ciphertext = ciphertext[gcm.NonceSize():]
+	nonce := data[:gcm.NonceSize()]
+	ciphertext := data[gcm.NonceSize():]
 
+	// Decrypt and verify the value
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to decrypt value: %w", err)
+		return "", fmt.Errorf("failed to decrypt value (possibly corrupted or from different system)")
 	}
 
 	return string(plaintext), nil
