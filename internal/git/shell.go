@@ -395,12 +395,26 @@ func (s *ShellGit) Push(branch string, force bool) error {
 		return fmt.Errorf("invalid branch name: %w", err)
 	}
 
+	// Try normal push first
 	args := []string{"push", "origin", branch}
 	if force {
 		args = []string{"push", "--force", "origin", branch}
 	}
+
 	_, err := s.run(args...)
-	return err
+	if err != nil {
+		// If the error is about missing upstream, set it up automatically
+		if strings.Contains(err.Error(), "no upstream branch") ||
+			strings.Contains(err.Error(), "set-upstream") {
+			// Set the upstream branch and try again
+			if force {
+				return s.runInteractive("push", "--set-upstream", "--force", "origin", branch)
+			}
+			return s.runInteractive("push", "--set-upstream", "origin", branch)
+		}
+		return err
+	}
+	return nil
 }
 
 // PushWithLease pushes the specified branch to the remote repository using --force-with-lease
@@ -410,8 +424,18 @@ func (s *ShellGit) PushWithLease(branch string) error {
 		return fmt.Errorf("invalid branch name: %w", err)
 	}
 
+	// Try normal force-with-lease push first
 	_, err := s.run("push", "--force-with-lease", "origin", branch)
-	return err
+	if err != nil {
+		// If the error is about missing upstream, set it up automatically
+		if strings.Contains(err.Error(), "no upstream branch") ||
+			strings.Contains(err.Error(), "set-upstream") {
+			// Set the upstream branch and try again with force-with-lease
+			return s.runInteractive("push", "--set-upstream", "--force-with-lease", "origin", branch)
+		}
+		return err
+	}
+	return nil
 }
 
 // DefaultBranch returns the name of the default branch (usually main or master)

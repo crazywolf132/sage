@@ -529,13 +529,7 @@ func rebaseBranch(g git.Service, parentBranch string) error {
 func pushChanges(g git.Service, branch string, opts SyncOptions) error {
 	// Always use --force-with-lease for safety
 	if err := g.PushWithLease(branch); err != nil {
-		if strings.Contains(err.Error(), "no upstream branch") {
-			// Try to set up the upstream branch
-			if err := g.RunInteractive("push", "--set-upstream", "origin", branch); err != nil {
-				return fmt.Errorf("failed to set upstream branch: %w", err)
-			}
-			return nil
-		}
+		// The underlying git methods now handle upstream setup automatically
 		return fmt.Errorf("failed to push changes: %w", err)
 	}
 	return nil
