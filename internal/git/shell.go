@@ -512,6 +512,11 @@ func (s *ShellGit) PullRebase() error {
 	return s.runInteractive("pull", "--rebase")
 }
 
+// PullMerge performs a pull with merge (no rebase)
+func (s *ShellGit) PullMerge() error {
+	return s.runInteractive("pull", "--no-rebase")
+}
+
 // CreateBranch creates a new branch with the specified name
 func (s *ShellGit) CreateBranch(name string) error {
 	if err := validateRef(name); err != nil {

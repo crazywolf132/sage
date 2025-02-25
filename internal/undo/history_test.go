@@ -44,6 +44,7 @@ func (m *MockGit) Checkout(name string) error                                   
 func (m *MockGit) Pull() error                                                   { return nil }
 func (m *MockGit) PullFF() error                                                 { return nil }
 func (m *MockGit) PullRebase() error                                             { return nil }
+func (m *MockGit) PullMerge() error                                              { return nil }
 func (m *MockGit) CreateBranch(name string) error                                { return nil }
 func (m *MockGit) Merge(base string) error                                       { return nil }
 func (m *MockGit) MergeAbort() error                                             { return nil }

@@ -189,6 +189,11 @@ func (m *MockGit) PullRebase() error {
 	return nil
 }
 
+func (m *MockGit) PullMerge() error {
+	m.trackCall("PullMerge")
+	return nil
+}
+
 func (m *MockGit) Merge(base string) error {
 	m.trackCall("Merge")
 	return nil
