@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -600,20 +601,33 @@ func handleSyncError(g git.Service, err error, result *SyncResult) error {
 }
 
 func isBehindRemote(g git.Service, branch string) (bool, error) {
-	// Get the merge base with remote
+	// Get the remote branch name
 	remoteBranch := "origin/" + branch
-	base, err := g.GetMergeBase(branch, remoteBranch)
+
+	// Check if remote branch exists by getting its commit hash
+	_, err := g.GetCommitHash(remoteBranch)
+	if err != nil {
+		return false, err // Remote branch doesn't exist or can't be accessed
+	}
+
+	// Check if we're ahead, behind, or diverged from remote
+	out, err := g.Run("rev-list", "--left-right", "--count", branch+"..."+remoteBranch)
 	if err != nil {
 		return false, err
 	}
 
-	// Get current HEAD
-	head, err := g.GetCommitHash("HEAD")
-	if err != nil {
-		return false, err
+	// Parse output like "1	2" where first number is ahead count, second is behind count
+	parts := strings.Fields(out)
+	if len(parts) != 2 {
+		return false, fmt.Errorf("unexpected output format from git rev-list: %s", out)
 	}
 
-	// If merge base is different from HEAD, we're behind
-	behind := base != head
-	return behind, nil
+	// Parse the behind count
+	behindCount, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return false, fmt.Errorf("failed to parse behind count: %w", err)
+	}
+
+	// We're behind if the behind count is greater than 0
+	return behindCount > 0, nil
 }
