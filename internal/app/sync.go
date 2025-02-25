@@ -327,6 +327,9 @@ func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 
 	// Then check if we're behind remote (if it exists)
 	behind, err := isBehindRemote(g, curBranch)
+	if opts.Verbose {
+		ui.Info(fmt.Sprintf("Remote branch check: Behind=%v, Error=%v", behind, err))
+	}
 	if err == nil && behind {
 		// Pull remote changes for the current branch before integrating with parent
 		// Only do this if the branch has a remote tracking branch
@@ -605,16 +608,28 @@ func isBehindRemote(g git.Service, branch string) (bool, error) {
 	remoteBranch := "origin/" + branch
 
 	// Check if remote branch exists by getting its commit hash
-	_, err := g.GetCommitHash(remoteBranch)
+	remoteHash, err := g.GetCommitHash(remoteBranch)
 	if err != nil {
-		return false, err // Remote branch doesn't exist or can't be accessed
+		return false, fmt.Errorf("remote branch check failed: %w", err) // Remote branch doesn't exist or can't be accessed
 	}
+
+	// Get local branch hash for debugging
+	localHash, err := g.GetCommitHash(branch)
+	if err != nil {
+		return false, fmt.Errorf("local branch check failed: %w", err)
+	}
+
+	// Debug: Print the hashes
+	fmt.Printf("DEBUG: Local hash: %s, Remote hash: %s\n", localHash, remoteHash)
 
 	// Check if we're ahead, behind, or diverged from remote
 	out, err := g.Run("rev-list", "--left-right", "--count", branch+"..."+remoteBranch)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("rev-list failed: %w", err)
 	}
+
+	// Debug: Print the raw output
+	fmt.Printf("DEBUG: rev-list output: '%s'\n", out)
 
 	// Parse output like "1	2" where first number is ahead count, second is behind count
 	parts := strings.Fields(out)
@@ -622,11 +637,19 @@ func isBehindRemote(g git.Service, branch string) (bool, error) {
 		return false, fmt.Errorf("unexpected output format from git rev-list: %s", out)
 	}
 
-	// Parse the behind count
+	// Parse the counts
+	aheadCount, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return false, fmt.Errorf("failed to parse ahead count: %w", err)
+	}
+
 	behindCount, err := strconv.Atoi(parts[1])
 	if err != nil {
 		return false, fmt.Errorf("failed to parse behind count: %w", err)
 	}
+
+	// Debug: Print the counts
+	fmt.Printf("DEBUG: Ahead count: %d, Behind count: %d\n", aheadCount, behindCount)
 
 	// We're behind if the behind count is greater than 0
 	return behindCount > 0, nil
