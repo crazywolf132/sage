@@ -140,7 +140,22 @@ func validateCommandArg(arg string) error {
 // SetupSecureCommand creates a command with a controlled environment
 func SetupSecureCommand(prog string, args ...string) (*exec.Cmd, error) {
 	// Validate program name and arguments
-	for _, arg := range append([]string{prog}, args...) {
+	for i, arg := range append([]string{prog}, args...) {
+		// Skip validation for args[0] (program name) for simplicity in checking previous args
+		if i == 0 {
+			if err := ValidateCommandArg(arg); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		// Skip validation for Git format specifiers and other special Git arguments
+		if strings.HasPrefix(arg, "--format=") ||
+			(i > 1 && strings.HasPrefix(args[i-2], "--format")) ||
+			strings.HasPrefix(arg, "--pretty=") {
+			continue
+		}
+
 		if err := ValidateCommandArg(arg); err != nil {
 			return nil, err
 		}
@@ -188,8 +203,19 @@ func (s *ShellGit) Run(args ...string) (string, error) {
 func (s *ShellGit) run(args ...string) (string, error) {
 	// Validate all arguments
 	for i, arg := range args {
+		// Skip flags
 		if strings.HasPrefix(arg, "-") {
-			continue // Skip flags
+			continue
+		}
+
+		// Skip validation for Git format specifiers
+		if i > 0 && strings.HasPrefix(args[i-1], "--format=") {
+			continue
+		}
+
+		// Skip validation for format values directly following --format
+		if i > 0 && args[i-1] == "--format" {
+			continue
 		}
 
 		// Skip validation for commit messages that follow -m flag
@@ -226,8 +252,19 @@ func (s *ShellGit) run(args ...string) (string, error) {
 func (s *ShellGit) runInteractive(args ...string) error {
 	// Validate all arguments
 	for i, arg := range args {
+		// Skip flags
 		if strings.HasPrefix(arg, "-") {
-			continue // Skip flags
+			continue
+		}
+
+		// Skip validation for Git format specifiers
+		if i > 0 && strings.HasPrefix(args[i-1], "--format=") {
+			continue
+		}
+
+		// Skip validation for format values directly following --format
+		if i > 0 && args[i-1] == "--format" {
+			continue
 		}
 
 		// Skip validation for commit messages that follow -m flag
