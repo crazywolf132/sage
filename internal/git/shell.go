@@ -156,6 +156,17 @@ func SetupSecureCommand(prog string, args ...string) (*exec.Cmd, error) {
 			continue
 		}
 
+		// Skip full validation for Git revision ranges (containing ..) when used with Git commands
+		if i > 1 && strings.Contains(arg, "..") && prog == "git" &&
+			(args[0] == "rev-list" || args[0] == "log" || args[0] == "diff" ||
+				args[0] == "show" || args[0] == "blame") {
+			// Still perform basic command injection checks with ValidateCommandArg
+			if err := ValidateCommandArg(arg); err != nil {
+				return nil, fmt.Errorf("invalid revision range: %w", err)
+			}
+			continue
+		}
+
 		if err := ValidateCommandArg(arg); err != nil {
 			return nil, err
 		}
@@ -218,6 +229,17 @@ func (s *ShellGit) run(args ...string) (string, error) {
 			continue
 		}
 
+		// Skip full validation for Git revision ranges (containing ..) when used with rev-list, log, or diff commands
+		if i > 0 && strings.Contains(arg, "..") &&
+			(args[0] == "rev-list" || args[0] == "log" || args[0] == "diff" ||
+				args[0] == "show" || args[0] == "blame") {
+			// Still perform basic command injection checks
+			if err := ValidateCommandArg(arg); err != nil {
+				return "", fmt.Errorf("invalid revision range: %w", err)
+			}
+			continue
+		}
+
 		// Skip validation for commit messages that follow -m flag
 		if i > 0 && (args[i-1] == "-m" || args[i-1] == "--message") {
 			// For commit messages, use the less strict ValidateCommandArg
@@ -264,6 +286,17 @@ func (s *ShellGit) runInteractive(args ...string) error {
 
 		// Skip validation for format values directly following --format
 		if i > 0 && args[i-1] == "--format" {
+			continue
+		}
+
+		// Skip full validation for Git revision ranges (containing ..) when used with rev-list, log, or diff commands
+		if i > 0 && strings.Contains(arg, "..") &&
+			(args[0] == "rev-list" || args[0] == "log" || args[0] == "diff" ||
+				args[0] == "show" || args[0] == "blame") {
+			// Still perform basic command injection checks
+			if err := ValidateCommandArg(arg); err != nil {
+				return fmt.Errorf("invalid revision range: %w", err)
+			}
 			continue
 		}
 
