@@ -74,6 +74,10 @@ func (m *MockGit) SetConfig(key, value string, global bool) error               
 func (m *MockGit) GetRepoPath() (string, error)                                  { return "", nil }
 func (m *MockGit) StagedDiff() (string, error)                                   { return "", nil }
 func (m *MockGit) GrepDiff(diff string, pattern string) ([]string, error)        { return nil, nil }
+func (m *MockGit) ListConflictedFiles() (string, error)                          { return "", nil }
+func (m *MockGit) GetConfigValue(key string) (string, error)                     { return "", nil }
+func (m *MockGit) MergeContinue() error                                          { return nil }
+func (m *MockGit) RebaseContinue() error                                         { return nil }
 
 func TestNewHistory(t *testing.T) {
 	h := NewHistory()

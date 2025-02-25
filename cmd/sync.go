@@ -3,7 +3,6 @@ package cmd
 import (
 	"github.com/crazywolf132/sage/internal/app"
 	"github.com/crazywolf132/sage/internal/git"
-	"github.com/crazywolf132/sage/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -17,46 +16,38 @@ var (
 )
 
 var syncCmd = &cobra.Command{
-	Use:   "sync [target-branch]",
-	Short: "Magically sync your branch with the latest changes",
-	Long: `Sync keeps your branch up to date with the latest changes, handling all the complex Git operations for you.
+	Use:   "sync",
+	Short: "Synchronize your branch with the main branch",
+	Long: `Synchronize your branch with updates from the parent branch.
 
-What it does:
-✨ Updates your branch with the latest changes
-✨ Handles conflicts gracefully
-✨ Keeps your work safe
+The 'sync' command intelligently pulls changes from the parent branch
+and ensures your work stays up to date. It automatically:
 
-Just run 'sage sync' and let the magic happen!
+1. Saves any work in progress (staged and unstaged changes)
+2. Updates your branch with new changes from parent branch
+3. Restores your work
+4. Resolves conflicts when possible
 
-Common Scenarios:
-  • Just sync:        sage sync
-  • Sync with main:   sage sync main
-  • Fix conflicts:    sage sync --continue
-  • Start over:       sage sync --abort
+By default, it uses the main branch as the parent branch, but you
+can specify any branch with the --target flag.`,
+	Example: `  # Sync with the main branch (default)
+  sage sync
 
-Advanced Options:
-  • Preview changes:  sage sync --dry-run
-  • Skip auto-push:   sage sync --no-push
-  • Show details:     sage sync --verbose`,
-	Example: `  sage sync
-  sage sync main
+  # Sync with a specific branch
+  sage sync --target develop
+
+  # Sync without pushing changes
+  sage sync --no-push
+
+  # Resume after resolving conflicts
   sage sync --continue
+
+  # Abort a conflicted sync
   sage sync --abort`,
-	Aliases: []string{"update", "s"},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		g := git.NewShellGit()
 
-		// Get target branch from args or use default
-		if len(args) > 0 {
-			syncTarget = args[0]
-		}
-
-		// Validate flags
-		if syncAbort && syncContinue {
-			return ui.NewError("Hint: Use either --abort to start over or --continue after fixing conflicts")
-		}
-
-		// Run the sync operation with all options
+		// Run sync with options
 		opts := app.SyncOptions{
 			TargetBranch: syncTarget,
 			NoPush:       syncNoPush,
@@ -67,11 +58,6 @@ Advanced Options:
 		}
 
 		if err := app.SyncBranch(g, opts); err != nil {
-			// If it's a sync error with conflicts, show a more helpful message
-			if syncErr, ok := err.(*app.SyncError); ok {
-				ui.Error(syncErr.Error())
-				return nil
-			}
 			return err
 		}
 

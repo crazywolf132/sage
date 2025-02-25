@@ -332,3 +332,39 @@ func (m *MockGit) DeleteRemoteBranch(name string) error {
 	delete(m.branches, "origin/"+name)
 	return nil
 }
+
+// StagedDiff returns the diff of staged changes
+func (m *MockGit) StagedDiff() (string, error) {
+	m.trackCall("StagedDiff")
+	return "", nil
+}
+
+// GrepDiff searches for a pattern in a diff and returns matching lines
+func (m *MockGit) GrepDiff(diff string, pattern string) ([]string, error) {
+	m.trackCall("GrepDiff")
+	return []string{}, nil
+}
+
+// ListConflictedFiles returns a list of files with conflicts
+func (m *MockGit) ListConflictedFiles() (string, error) {
+	m.trackCall("ListConflictedFiles")
+	return "", nil
+}
+
+// GetConfigValue returns a mock Git configuration value
+func (m *MockGit) GetConfigValue(key string) (string, error) {
+	m.trackCall("GetConfigValue")
+	return "", nil
+}
+
+// MergeContinue continues a merge operation
+func (m *MockGit) MergeContinue() error {
+	m.trackCall("MergeContinue")
+	return nil
+}
+
+// RebaseContinue continues a rebase operation
+func (m *MockGit) RebaseContinue() error {
+	m.trackCall("RebaseContinue")
+	return nil
+}

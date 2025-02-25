@@ -779,31 +779,18 @@ func (s *ShellGit) GetBranchMergeConflicts(branch string) (int, error) {
 	return strings.Count(out, "<<<<<<<"), nil
 }
 
-// MergeContinue continues a merge operation after conflicts have been resolved
-// Returns an error if there are still unresolved conflicts
-func (s *ShellGit) MergeContinue() (string, error) {
-	out, err := s.run("merge", "--continue")
-	if err != nil {
-		// if error message indicates conflicts, inform the user.
-		if strings.Contains(err.Error(), "conflict") {
-			return "", fmt.Errorf("merge conflicts encountered; please resolve conflicts and run 'sage sync --continue'")
-		}
-		return "", fmt.Errorf("failed to continue merge: %w", err)
-	}
-	return out, nil
+// MergeContinue continues a merge operation after conflicts are resolved
+// It runs: git commit --no-edit
+func (s *ShellGit) MergeContinue() error {
+	_, err := s.run("commit", "--no-edit")
+	return err
 }
 
-// RebaseContinue continues a rebase operation after conflicts have been resolved
-// Returns an error if there are still unresolved conflicts
-func (s *ShellGit) RebaseContinue() (string, error) {
-	out, err := s.run("rebase", "--continue")
-	if err != nil {
-		if strings.Contains(err.Error(), "confict") {
-			return "", fmt.Errorf("rebase conflicts encountered; please resolve conflicts and run 'sage sync --continue'")
-		}
-		return "", fmt.Errorf("failed to continue rebase: %w", err)
-	}
-	return out, nil
+// RebaseContinue continues a rebase operation after conflicts are resolved
+// It runs: git rebase --continue
+func (s *ShellGit) RebaseContinue() error {
+	_, err := s.run("rebase", "--continue")
+	return err
 }
 
 // ListConflictedFiles returns a string listing files with unresolved conflicts.
@@ -945,4 +932,14 @@ func (g *ShellGit) GrepDiff(diff string, pattern string) ([]string, error) {
 		return nil, nil
 	}
 	return lines, nil
+}
+
+// GetConfigValue returns the value of a Git configuration item
+// It runs: git config --get <key>
+func (s *ShellGit) GetConfigValue(key string) (string, error) {
+	out, err := s.run("config", "--get", key)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
 }

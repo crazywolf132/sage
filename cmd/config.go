@@ -16,7 +16,39 @@ var (
 
 var configCmd = &cobra.Command{
 	Use:   "config",
-	Short: "Manage Sage configuration",
+	Short: "View and edit your Sage configuration",
+	Long: `View and edit your Sage configuration.
+
+Configuration is stored both globally and per-repository:
+- Global: Applies to all repositories
+- Local: Applies only to the current repository
+
+Sage looks for configuration in this order:
+1. Local repository config
+2. Global config
+
+You can add custom configurations for new features with 'sage config set'.`,
+	Example: `  # View all config values
+  sage config list
+
+  # Set a global config value
+  sage config set git.default_branch main
+
+  # Set a local config value (only for this repo)
+  sage config set --local git.default_branch develop
+
+  # Set a merge strategy preference
+  sage config set git.merge.strategy merge  # Options: merge, rebase
+
+  # Always create PRs as drafts
+  sage config set pr.draft true
+
+  # Set default PR reviewers
+  sage config set pr.reviewers "user1,user2"
+
+  # Enable experimental features
+  sage config set experimental.rerere true`,
+	Args: cobra.MaximumNArgs(1),
 }
 
 var configGetCmd = &cobra.Command{

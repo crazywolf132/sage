@@ -46,10 +46,9 @@ func (e *SyncError) Error() string {
 %s
 
 To resolve:
-1. Open the files
-2. Resolve conflicts
-3. Save changes
-4. Run 'sage sync --continue'
+1. Run 'sage resolve' for interactive conflict resolution
+2. Or resolve conflicts manually
+3. Run 'sage sync --continue'
 
 To start over: 'sage sync --abort'`,
 			strings.Join(e.Conflicts, "\n"))
@@ -70,16 +69,18 @@ Run 'git stash pop' to restore them.`, e.Message)
 		return fmt.Sprintf(`Unable to automatically update your branch.
 
 To continue:
-1. Resolve any conflicts
-2. Run 'sage sync --continue'
+1. Run 'sage resolve' for interactive conflict resolution
+2. Or resolve conflicts manually
+3. Run 'sage sync --continue'
 
 To start over: 'sage sync --abort'`)
 	case "merge":
 		return fmt.Sprintf(`Unable to automatically update your branch.
 
 To continue:
-1. Resolve any conflicts
-2. Run 'sage sync --continue'
+1. Run 'sage resolve' for interactive conflict resolution
+2. Or resolve conflicts manually
+3. Run 'sage sync --continue'
 
 To start over: 'sage sync --abort'`)
 	default:
@@ -90,8 +91,9 @@ To start over: 'sage sync --abort'`)
 // SyncBranch synchronizes the current branch with its parent (default) branch.
 // It handles all common scenarios automatically and provides clear guidance when manual intervention is needed.
 func SyncBranch(g git.Service, opts SyncOptions) error {
-	spinner := ui.NewSpinner()
-	defer spinner.Stop()
+	// Create a progress tracker
+	progress := ui.NewSyncProgress()
+	defer progress.ShowOptimizationTip()
 
 	if opts.DryRun {
 		ui.Info("Dry run: Previewing sync operations without modifying your repository")
@@ -105,7 +107,7 @@ func SyncBranch(g git.Service, opts SyncOptions) error {
 		return handleSyncResult(result)
 	}
 
-	return performSync(g, opts, spinner)
+	return performSync(g, opts, progress)
 }
 
 func verifyRepoState(g git.Service) error {
@@ -177,7 +179,7 @@ func handleContinue(g git.Service) SyncResult {
 	}
 
 	if merging, _ := g.IsMerging(); merging {
-		out, err := sg.MergeContinue()
+		err := sg.MergeContinue()
 		if err != nil {
 			conflicts, _ := sg.ListConflictedFiles()
 			return SyncResult{
@@ -190,12 +192,12 @@ func handleContinue(g git.Service) SyncResult {
 		}
 		return SyncResult{
 			Success: true,
-			Message: "Successfully continued merge: " + strings.TrimSpace(out),
+			Message: "Successfully continued merge",
 		}
 	}
 
 	if rebase, _ := g.IsRebasing(); rebase {
-		out, err := sg.RebaseContinue()
+		err := sg.RebaseContinue()
 		if err != nil {
 			conflicts, _ := sg.ListConflictedFiles()
 			return SyncResult{
@@ -208,7 +210,7 @@ func handleContinue(g git.Service) SyncResult {
 		}
 		return SyncResult{
 			Success: true,
-			Message: "Successfully continued rebase: " + strings.TrimSpace(out),
+			Message: "Successfully continued rebase",
 		}
 	}
 
@@ -218,7 +220,7 @@ func handleContinue(g git.Service) SyncResult {
 	}
 }
 
-func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
+func performSync(g git.Service, opts SyncOptions, progress *ui.SyncProgress) error {
 	var result SyncResult
 	result.StartTime = time.Now()
 
@@ -227,12 +229,12 @@ func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 	}
 
 	// 1. Repository Check
-	spinner.Start("Verifying repository...")
+	progress.StartStep("verify")
 	if err := verifyRepoState(g); err != nil {
-		spinner.StopFail()
+		progress.CompleteStep("verify", false)
 		return fmt.Errorf("Error: Not a Git repository. Please navigate to a valid Git project")
 	}
-	spinner.StopSuccess()
+	progress.CompleteStep("verify", true)
 
 	// 2. Branch Information
 	curBranch, parentBranch, err := getBranchInfo(g, opts.TargetBranch)
@@ -251,30 +253,29 @@ func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 	}
 
 	if hasChanges {
-		spinner.Start("Saving work in progress...")
+		progress.StartStep("stash")
 		stashed, stashRef, err := handleWorkingDirectory(g)
 		if err != nil {
-			spinner.StopFail()
+			progress.CompleteStep("stash", false)
 			return fmt.Errorf("Failed to stash changes: %w", err)
 		}
 		result.StashedFiles = stashed
 		result.StashRef = stashRef
-		spinner.StopSuccess()
+		progress.CompleteStep("stash", true)
+	} else {
+		progress.SkipStep("stash")
 	}
 
 	// 4. Remote Updates
-	spinner.Start("Fetching updates...")
+	progress.StartStep("fetch")
 	if err := g.FetchAll(); err != nil {
-		spinner.StopFail()
+		progress.CompleteStep("fetch", false)
 		if result.StashedFiles {
-			restoreSpinner := ui.NewSpinner()
-			restoreSpinner.Start("Restoring your work...")
-			_ = g.StashPop()
-			restoreSpinner.StopSuccess()
+			restoreChanges(g, progress)
 		}
 		return fmt.Errorf("Failed to fetch updates: %w", err)
 	}
-	spinner.StopSuccess()
+	progress.CompleteStep("fetch", true)
 
 	// Check if we're on main/master branch
 	isMainBranch := curBranch == parentBranch
@@ -297,34 +298,74 @@ func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 	// Determine if we have diverged (have unique commits)
 	hasDiverged := mergeBase != currentHead
 
-	// If we've diverged significantly (more than 10 commits), use merge
-	// Otherwise, use rebase for a cleaner history
+	// If we've diverged, choose strategy based on config or divergence
 	if hasDiverged {
+		progress.StartStep("integrate")
+		// Check if user has specified a preferred strategy in config
+		preferredStrategy := getPreferredMergeStrategy(g)
 		divergence, err := g.GetBranchDivergence(curBranch, parentBranch)
 		if err != nil {
 			divergence = 0
 		}
 
-		if divergence > 10 {
+		if opts.Verbose {
+			ui.Info(fmt.Sprintf("Branch has diverged by %d commits", divergence))
+		}
+
+		// Use preferred strategy if set, otherwise decide based on divergence
+		switch preferredStrategy {
+		case "merge":
 			if opts.Verbose {
-				ui.Info("Using merge strategy to preserve branch history")
+				ui.Info("Using merge strategy based on configuration")
 			}
 			if err := g.Merge(parentBranch); err != nil {
+				progress.CompleteStep("integrate", false)
+				if result.StashedFiles {
+					restoreChanges(g, progress)
+				}
 				return fmt.Errorf("failed to merge %s: %w", parentBranch, err)
 			}
-		} else {
+		case "rebase":
 			if opts.Verbose {
-				ui.Info("Using rebase strategy for a clean history")
+				ui.Info("Using rebase strategy based on configuration")
 			}
 			if err := rebaseBranch(g, parentBranch); err != nil {
+				progress.CompleteStep("integrate", false)
+				if result.StashedFiles {
+					restoreChanges(g, progress)
+				}
 				return err
 			}
+		default:
+			// Auto-select based on divergence
+			if divergence > 10 {
+				if opts.Verbose {
+					ui.Info("Using merge strategy to preserve branch history")
+				}
+				ui.Info("Branch has diverged significantly - using merge strategy")
+				if err := g.PullMerge(); err != nil {
+					progress.CompleteStep("integrate", false)
+					if result.StashedFiles {
+						restoreChanges(g, progress)
+					}
+					return fmt.Errorf("failed to merge %s: %w", parentBranch, err)
+				}
+			} else {
+				if opts.Verbose {
+					ui.Info("Using rebase strategy for a clean history")
+				}
+				if err := rebaseBranch(g, parentBranch); err != nil {
+					progress.CompleteStep("integrate", false)
+					if result.StashedFiles {
+						restoreChanges(g, progress)
+					}
+					return err
+				}
+			}
 		}
+		progress.CompleteStep("integrate", true)
 	} else {
-		// No divergence, we can fast-forward
-		if err := g.Merge(parentBranch); err != nil {
-			return fmt.Errorf("failed to fast-forward to %s: %w", parentBranch, err)
-		}
+		progress.SkipStep("integrate")
 	}
 
 	// Then check if we're behind remote (if it exists)
@@ -334,52 +375,31 @@ func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 	}
 
 	if needsUpdate {
-		// 5. Integration (only if not on main/master)
-		if !isMainBranch {
-			spinner.Start("Integrating remote changes...")
-			if err := integrateChanges(g, parentBranch, opts); err != nil {
-				spinner.StopFail()
-				if result.StashedFiles {
-					restoreSpinner := ui.NewSpinner()
-					restoreSpinner.Start("Restoring your work...")
-					_ = g.StashPop()
-					restoreSpinner.StopSuccess()
-				}
-				return handleSyncError(g, err, &result)
-			}
-			spinner.StopSuccess()
-		}
-
-		// 6. Push Changes (only if not on main/master or if we have local commits)
-		if !opts.NoPush && !isMainBranch {
-			spinner.Start("Pushing changes...")
+		if !isMainBranch && !opts.NoPush {
+			progress.StartStep("push")
 			if err := pushChanges(g, curBranch, opts); err != nil {
-				spinner.StopFail()
+				progress.CompleteStep("push", false)
 				if result.StashedFiles {
-					restoreSpinner := ui.NewSpinner()
-					restoreSpinner.Start("Restoring your work...")
-					_ = g.StashPop()
-					restoreSpinner.StopSuccess()
+					restoreChanges(g, progress)
 				}
 				return err
 			}
-			spinner.StopSuccess()
+			progress.CompleteStep("push", true)
+		} else {
+			progress.SkipStep("push")
 		}
-	} else if isMainBranch {
-		ui.Info("Branch is up to date")
+	} else {
+		progress.SkipStep("push")
+		if isMainBranch {
+			ui.Info("Branch is up to date")
+		}
 	}
 
 	// 7. Restore Changes
 	if result.StashedFiles {
-		spinner.Start("Restoring your work...")
-		if err := g.StashPop(); err != nil {
-			spinner.StopFail()
-			return &SyncError{
-				Type:    "stash",
-				Message: "Failed to restore your changes",
-			}
-		}
-		spinner.StopSuccess()
+		return restoreChanges(g, progress)
+	} else {
+		progress.SkipStep("restore")
 	}
 
 	// 8. Final Status
@@ -388,6 +408,9 @@ func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 	} else {
 		ui.Success(fmt.Sprintf("Branch '%s' is now up to date", curBranch))
 	}
+
+	// Show a summary of what we did
+	fmt.Println(progress.GetSummary())
 
 	return nil
 }
@@ -473,27 +496,52 @@ func integrateChanges(g git.Service, parentBranch string, opts SyncOptions) erro
 	// Determine if we have diverged (have unique commits)
 	hasDiverged := mergeBase != currentHead
 
-	// If we've diverged significantly (more than 10 commits), use merge
-	// Otherwise, use rebase for a cleaner history
+	// If we've diverged, choose strategy based on config or divergence
 	if hasDiverged {
+		// Check if user has specified a preferred strategy in config
+		preferredStrategy := getPreferredMergeStrategy(g)
 		divergence, err := g.GetBranchDivergence(curBranch, parentBranch)
 		if err != nil {
 			divergence = 0
 		}
 
-		if divergence > 10 {
+		if opts.Verbose {
+			ui.Info(fmt.Sprintf("Branch has diverged by %d commits", divergence))
+		}
+
+		// Use preferred strategy if set, otherwise decide based on divergence
+		switch preferredStrategy {
+		case "merge":
 			if opts.Verbose {
-				ui.Info("Using merge strategy to preserve branch history")
+				ui.Info("Using merge strategy based on configuration")
 			}
 			if err := g.Merge(parentBranch); err != nil {
 				return fmt.Errorf("failed to merge %s: %w", parentBranch, err)
 			}
-		} else {
+		case "rebase":
 			if opts.Verbose {
-				ui.Info("Using rebase strategy for a clean history")
+				ui.Info("Using rebase strategy based on configuration")
 			}
 			if err := rebaseBranch(g, parentBranch); err != nil {
 				return err
+			}
+		default:
+			// Auto-select based on divergence
+			if divergence > 10 {
+				if opts.Verbose {
+					ui.Info("Using merge strategy to preserve branch history")
+				}
+				ui.Info("Branch has diverged significantly - using merge strategy")
+				if err := g.PullMerge(); err != nil {
+					return fmt.Errorf("failed to merge %s: %w", parentBranch, err)
+				}
+			} else {
+				if opts.Verbose {
+					ui.Info("Using rebase strategy for a clean history")
+				}
+				if err := rebaseBranch(g, parentBranch); err != nil {
+					return err
+				}
 			}
 		}
 	} else {
@@ -504,6 +552,26 @@ func integrateChanges(g git.Service, parentBranch string, opts SyncOptions) erro
 	}
 
 	return nil
+}
+
+// getPreferredMergeStrategy gets the user's preferred merge strategy from config
+func getPreferredMergeStrategy(g git.Service) string {
+	sg, ok := g.(*git.ShellGit)
+	if !ok {
+		return "" // default to auto-selection
+	}
+
+	// Try to get config from git or environment
+	strategy, _ := sg.Run("config", "--get", "sage.merge.strategy")
+	strategy = strings.TrimSpace(strategy)
+
+	// Validate strategy
+	switch strategy {
+	case "merge", "rebase":
+		return strategy
+	default:
+		return "" // auto-selection
+	}
 }
 
 func rebaseBranch(g git.Service, parentBranch string) error {
@@ -595,4 +663,18 @@ func isBehindRemote(g git.Service, branch string) (bool, error) {
 	// If merge base is different from HEAD, we're behind
 	behind := base != head
 	return behind, nil
+}
+
+// Helper to restore changes with progress tracking
+func restoreChanges(g git.Service, progress *ui.SyncProgress) error {
+	progress.StartStep("restore")
+	if err := g.StashPop(); err != nil {
+		progress.CompleteStep("restore", false)
+		return &SyncError{
+			Type:    "stash",
+			Message: "Failed to restore your changes",
+		}
+	}
+	progress.CompleteStep("restore", true)
+	return nil
 }
