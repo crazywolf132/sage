@@ -25,6 +25,7 @@ type Service interface {
 	Pull() error
 	PullFF() error
 	PullRebase() error
+	PullMerge() error
 	CreateBranch(name string) error
 	Merge(base string) error
 	MergeAbort() error
