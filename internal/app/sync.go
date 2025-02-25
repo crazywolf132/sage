@@ -328,7 +328,11 @@ func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 	// Then check if we're behind remote (if it exists)
 	behind, err := isBehindRemote(g, curBranch)
 	if opts.Verbose {
-		ui.Info(fmt.Sprintf("Remote branch check: Behind=%v, Error=%v", behind, err))
+		if err != nil {
+			ui.Info(fmt.Sprintf("Remote branch check: Error=%v", err))
+		} else {
+			ui.Info(fmt.Sprintf("Remote branch check: Behind=%v", behind))
+		}
 	}
 	if err == nil && behind {
 		// Pull remote changes for the current branch before integrating with parent
@@ -336,25 +340,18 @@ func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 		spinner.Start(fmt.Sprintf("Pulling changes from remote for branch '%s'...", curBranch))
 		// Try to pull, and handle error if no upstream branch
 		if err := g.PullFF(); err != nil {
-			// If there's no upstream branch, we can ignore this error and continue
-			if !strings.Contains(err.Error(), "no upstream branch") &&
-				!strings.Contains(err.Error(), "no tracking information") {
-				spinner.StopFail()
-				if result.StashedFiles {
-					restoreSpinner := ui.NewSpinner()
-					restoreSpinner.Start("Restoring your work...")
-					_ = g.StashPop()
-					restoreSpinner.StopSuccess()
-				}
-				return handleSyncError(g, err, &result)
+			// We already checked that the branch has a remote tracking branch,
+			// so any error here is a real error
+			spinner.StopFail()
+			if result.StashedFiles {
+				restoreSpinner := ui.NewSpinner()
+				restoreSpinner.Start("Restoring your work...")
+				_ = g.StashPop()
+				restoreSpinner.StopSuccess()
 			}
-			spinner.Stop()
-			if opts.Verbose {
-				ui.Info(fmt.Sprintf("No upstream branch found for '%s'", curBranch))
-			}
-		} else {
-			spinner.StopSuccess()
+			return handleSyncError(g, err, &result)
 		}
+		spinner.StopSuccess()
 		needsUpdate = true
 	}
 
@@ -604,13 +601,25 @@ func handleSyncError(g git.Service, err error, result *SyncResult) error {
 }
 
 func isBehindRemote(g git.Service, branch string) (bool, error) {
-	// Get the remote branch name
-	remoteBranch := "origin/" + branch
+	// First, get the actual upstream branch name
+	out, err := g.Run("rev-parse", "--abbrev-ref", branch+"@{upstream}")
 
-	// Check if remote branch exists by getting its commit hash
+	// If there's no upstream branch, we're not behind
+	if err != nil {
+		if strings.Contains(err.Error(), "no upstream") ||
+			strings.Contains(err.Error(), "no tracking information") {
+			return false, fmt.Errorf("no upstream branch configured")
+		}
+		return false, fmt.Errorf("upstream check failed: %w", err)
+	}
+
+	remoteBranch := strings.TrimSpace(out)
+	fmt.Printf("DEBUG: Using remote branch: %s for local branch: %s\n", remoteBranch, branch)
+
+	// Get remote branch hash
 	remoteHash, err := g.GetCommitHash(remoteBranch)
 	if err != nil {
-		return false, fmt.Errorf("remote branch check failed: %w", err) // Remote branch doesn't exist or can't be accessed
+		return false, fmt.Errorf("remote branch check failed: %w", err)
 	}
 
 	// Get local branch hash for debugging
@@ -623,18 +632,18 @@ func isBehindRemote(g git.Service, branch string) (bool, error) {
 	fmt.Printf("DEBUG: Local hash: %s, Remote hash: %s\n", localHash, remoteHash)
 
 	// Check if we're ahead, behind, or diverged from remote
-	out, err := g.Run("rev-list", "--left-right", "--count", branch+"..."+remoteBranch)
+	revListOut, err := g.Run("rev-list", "--left-right", "--count", branch+"..."+remoteBranch)
 	if err != nil {
 		return false, fmt.Errorf("rev-list failed: %w", err)
 	}
 
 	// Debug: Print the raw output
-	fmt.Printf("DEBUG: rev-list output: '%s'\n", out)
+	fmt.Printf("DEBUG: rev-list output: '%s'\n", revListOut)
 
 	// Parse output like "1	2" where first number is ahead count, second is behind count
-	parts := strings.Fields(out)
+	parts := strings.Fields(revListOut)
 	if len(parts) != 2 {
-		return false, fmt.Errorf("unexpected output format from git rev-list: %s", out)
+		return false, fmt.Errorf("unexpected output format from git rev-list: %s", revListOut)
 	}
 
 	// Parse the counts
