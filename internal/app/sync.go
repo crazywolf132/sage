@@ -621,5 +621,8 @@ func isBehindRemote(g git.Service, branch string) (bool, error) {
 	// "## local-test...origin/test-sync-with-remote [behind 1]"
 	// "## local-test...origin/test-sync-with-remote [ahead 1, behind 1]"
 	statusLine := lines[0]
-	return strings.Contains(statusLine, "[behind"), nil
+
+	// Look specifically for "[behind" pattern in status line
+	// This will match both "[behind N]" and "[ahead N, behind M]"
+	return strings.Contains(statusLine, "behind"), nil
 }
