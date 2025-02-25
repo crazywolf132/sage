@@ -12,6 +12,96 @@ import (
 	"github.com/crazywolf132/sage/internal/ui"
 )
 
+// SensitivityLevel indicates how critical a detected pattern is
+type SensitivityLevel int
+
+const (
+	// Critical patterns should never be committed (e.g., private keys)
+	Critical SensitivityLevel = iota
+	// High sensitivity patterns require explicit confirmation (e.g., passwords)
+	High
+	// Medium sensitivity patterns show a warning (e.g., potential secrets)
+	Medium
+)
+
+// SensitivePattern represents a pattern to detect in changes
+type SensitivePattern struct {
+	Pattern  string
+	Level    SensitivityLevel
+	Message  string
+	Category string
+}
+
+// sensitivePatterns contains regex patterns for common sensitive data
+var sensitivePatterns = []SensitivePattern{
+	// Critical - Never allow these
+	{
+		Pattern:  `(?i)-----BEGIN\s+(?:RSA|DSA|EC|OPENSSH)\s+PRIVATE\s+KEY-----`,
+		Level:    Critical,
+		Message:  "Private key detected",
+		Category: "Keys",
+	},
+	{
+		Pattern:  `(?i)(?:ssh-rsa|ssh-dsa|ssh-ed25519)\s+AAAA[0-9A-Za-z+/]+[=]{0,3}`,
+		Level:    Critical,
+		Message:  "SSH private key detected",
+		Category: "Keys",
+	},
+
+	// High - Require explicit confirmation
+	{
+		Pattern:  `(?i)password\s*[:=]\s*['"][^'"]+['"]`,
+		Level:    High,
+		Message:  "Password in plaintext",
+		Category: "Credentials",
+	},
+	{
+		Pattern:  `(?i)secret\s*[:=]\s*['"][^'"]+['"]`,
+		Level:    High,
+		Message:  "Secret in plaintext",
+		Category: "Credentials",
+	},
+	{
+		Pattern:  `(?i)api[_-]?key\s*[:=]\s*['"][^'"]+['"]`,
+		Level:    High,
+		Message:  "API key in plaintext",
+		Category: "Credentials",
+	},
+	{
+		Pattern:  `(?i)access[_-]?token\s*[:=]\s*['"][^'"]+['"]`,
+		Level:    High,
+		Message:  "Access token in plaintext",
+		Category: "Credentials",
+	},
+
+	// Medium - Show warnings
+	{
+		Pattern:  `(?i)bearer\s+[a-zA-Z0-9\-\._~\+\/]+=*`,
+		Level:    Medium,
+		Message:  "Possible Bearer token",
+		Category: "Tokens",
+	},
+	{
+		Pattern:  `(?i)aws[_-]?(?:access|secret|key)`,
+		Level:    Medium,
+		Message:  "Possible AWS credential",
+		Category: "Cloud",
+	},
+	{
+		Pattern:  `(?i)(?:mongodb|postgres|mysql|redis|rabbitmq).*=.+`,
+		Level:    Medium,
+		Message:  "Possible database connection string",
+		Category: "Database",
+	},
+}
+
+// Finding represents a detected sensitive data match
+type Finding struct {
+	Pattern  *SensitivePattern
+	Line     string
+	Category string
+}
+
 // CommitOptions defines the parameters for creating a git commit.
 // It provides configuration for AI-assisted commit messages, conventional commits,
 // and post-commit actions like pushing.
@@ -65,6 +155,80 @@ func changeCommitType(msg, newType string) string {
 	return fmt.Sprintf("%s: %s", newType, message)
 }
 
+// detectSensitiveData checks for potential sensitive data in the changes
+func detectSensitiveData(g git.Service) ([]Finding, error) {
+	// Get staged changes
+	diff, err := g.StagedDiff()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get staged changes: %w", err)
+	}
+
+	var findings []Finding
+	for _, pattern := range sensitivePatterns {
+		matches, err := g.GrepDiff(diff, pattern.Pattern)
+		if err != nil {
+			continue
+		}
+		for _, match := range matches {
+			findings = append(findings, Finding{
+				Pattern:  &pattern,
+				Line:     match,
+				Category: pattern.Category,
+			})
+		}
+	}
+
+	return findings, nil
+}
+
+// formatFindings formats the findings into a user-friendly message
+func formatFindings(findings []Finding) string {
+	if len(findings) == 0 {
+		return ""
+	}
+
+	var critical, high, medium []string
+	for _, f := range findings {
+		msg := fmt.Sprintf("- %s: %s", f.Pattern.Message, f.Line)
+		switch f.Pattern.Level {
+		case Critical:
+			critical = append(critical, msg)
+		case High:
+			high = append(high, msg)
+		case Medium:
+			medium = append(medium, msg)
+		}
+	}
+
+	var result strings.Builder
+	result.WriteString("Sensitive data detected in changes:\n\n")
+
+	if len(critical) > 0 {
+		result.WriteString("🚨 CRITICAL - Must be removed:\n")
+		result.WriteString(strings.Join(critical, "\n"))
+		result.WriteString("\n\n")
+	}
+
+	if len(high) > 0 {
+		result.WriteString("⚠️  HIGH RISK - Should be removed:\n")
+		result.WriteString(strings.Join(high, "\n"))
+		result.WriteString("\n\n")
+	}
+
+	if len(medium) > 0 {
+		result.WriteString("ℹ️  MEDIUM RISK - Please review:\n")
+		result.WriteString(strings.Join(medium, "\n"))
+		result.WriteString("\n")
+	}
+
+	result.WriteString("\nRecommendations:\n")
+	result.WriteString("1. Remove sensitive data from the changes\n")
+	result.WriteString("2. Consider using environment variables or a secrets manager\n")
+	result.WriteString("3. If these are test credentials, use placeholder values\n")
+
+	return result.String()
+}
+
 // Commit implements our simplified commit pipeline.
 // It automatically stages every file, then (if no message is provided)
 // uses AI (if enabled) to generate a commit message.
@@ -75,6 +239,36 @@ func Commit(g git.Service, opts CommitOptions) (CommitResult, error) {
 	isRepo, err := g.IsRepo()
 	if err != nil || !isRepo {
 		return result, fmt.Errorf("not a git repository")
+	}
+
+	// Check for sensitive data before proceeding
+	findings, err := detectSensitiveData(g)
+	if err != nil {
+		return result, err
+	}
+	if len(findings) > 0 {
+		// Block commit if there are any critical findings
+		for _, f := range findings {
+			if f.Pattern.Level == Critical {
+				return result, fmt.Errorf(formatFindings(findings))
+			}
+		}
+
+		// For high/medium findings, show warning but allow commit
+		ui.Warning(formatFindings(findings))
+		if !opts.AllowEmpty {
+			var proceed bool
+			prompt := &survey.Confirm{
+				Message: "Do you want to proceed with the commit despite the warnings?",
+				Default: false,
+			}
+			if err := survey.AskOne(prompt, &proceed); err != nil {
+				return result, err
+			}
+			if !proceed {
+				return result, fmt.Errorf("commit cancelled due to sensitive data")
+			}
+		}
 	}
 
 	// Get the current status.

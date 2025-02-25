@@ -23,6 +23,7 @@ func validateRef(ref string) error {
 	if ref == "" {
 		return fmt.Errorf("empty reference name")
 	}
+
 	// Check for common Git command injection patterns
 	if strings.Contains(ref, "&&") ||
 		strings.Contains(ref, "||") ||
@@ -33,9 +34,39 @@ func validateRef(ref string) error {
 		strings.Contains(ref, "`") ||
 		strings.Contains(ref, "$") ||
 		strings.Contains(ref, "(") ||
-		strings.Contains(ref, ")") {
+		strings.Contains(ref, ")") ||
+		strings.Contains(ref, "'") ||
+		strings.Contains(ref, "\"") ||
+		strings.ContainsAny(ref, "\x00\x0A") { // Null byte and newline
 		return fmt.Errorf("invalid characters in reference name")
 	}
+
+	// Git refs must follow specific formatting rules
+	// See: https://git-scm.com/docs/git-check-ref-format
+	// This is a simplified but safer version
+	for _, c := range ref {
+		// Control characters, space, DEL, ~, ^, :, \, ?, [, *, and starting/ending with . are invalid
+		if c <= 32 || c == 127 || c == '~' || c == '^' || c == ':' || c == '\\' ||
+			c == '?' || c == '[' || c == '*' {
+			return fmt.Errorf("invalid character '%c' in reference name", c)
+		}
+	}
+
+	// Check for double dots which could be used for path traversal
+	if strings.Contains(ref, "..") {
+		return fmt.Errorf("invalid '..' sequence in reference name")
+	}
+
+	// Check for @{ sequence which is a special refname syntax
+	if strings.Contains(ref, "@{") {
+		return fmt.Errorf("invalid '@{' sequence in reference name")
+	}
+
+	// Check for lock files or other special cases
+	if strings.HasSuffix(ref, ".lock") {
+		return fmt.Errorf("reference name cannot end with .lock")
+	}
+
 	return nil
 }
 
@@ -44,9 +75,9 @@ func validatePath(path string) error {
 	if path == "" {
 		return fmt.Errorf("empty path")
 	}
-	// Check for path traversal and command injection
-	if strings.Contains(path, "..") ||
-		strings.Contains(path, "&&") ||
+
+	// Check for command injection characters
+	if strings.Contains(path, "&&") ||
 		strings.Contains(path, "||") ||
 		strings.Contains(path, ";") ||
 		strings.Contains(path, "|") ||
@@ -55,10 +86,123 @@ func validatePath(path string) error {
 		strings.Contains(path, "`") ||
 		strings.Contains(path, "$") ||
 		strings.Contains(path, "(") ||
-		strings.Contains(path, ")") {
+		strings.Contains(path, ")") ||
+		strings.Contains(path, "'") ||
+		strings.Contains(path, "\"") ||
+		strings.ContainsAny(path, "\x00\x0A") { // Null byte and newline
 		return fmt.Errorf("invalid characters in path")
 	}
+
+	// Check for path traversal
+	if strings.Contains(path, "..") {
+		return fmt.Errorf("path traversal detected")
+	}
+
+	// Check for absolute paths (may be valid in some contexts, but safer to reject)
+	if strings.HasPrefix(path, "/") || (len(path) >= 3 && path[1] == ':' && (path[2] == '/' || path[2] == '\\')) {
+		return fmt.Errorf("absolute paths are not allowed")
+	}
+
 	return nil
+}
+
+// ValidateCommandArg checks an argument for command injection patterns
+func ValidateCommandArg(arg string) error {
+	if arg == "" {
+		return fmt.Errorf("empty argument")
+	}
+
+	// Check for common command injection patterns
+	if strings.Contains(arg, "&&") ||
+		strings.Contains(arg, "||") ||
+		strings.Contains(arg, ";") ||
+		strings.Contains(arg, "|") ||
+		strings.Contains(arg, ">") ||
+		strings.Contains(arg, "<") ||
+		strings.Contains(arg, "`") ||
+		strings.Contains(arg, "$") ||
+		strings.Contains(arg, "(") ||
+		strings.Contains(arg, ")") ||
+		strings.Contains(arg, "'") ||
+		strings.Contains(arg, "\"") ||
+		strings.ContainsAny(arg, "\x00\x0A") { // Null byte and newline
+		return fmt.Errorf("invalid characters in argument: %s", arg)
+	}
+	return nil
+}
+
+// validateCommandArg is an alias to the exported ValidateCommandArg
+// for backward compatibility within this package
+func validateCommandArg(arg string) error {
+	return ValidateCommandArg(arg)
+}
+
+// SetupSecureCommand creates a command with a controlled environment
+func SetupSecureCommand(prog string, args ...string) (*exec.Cmd, error) {
+	// Validate program name and arguments
+	for i, arg := range append([]string{prog}, args...) {
+		// Skip validation for args[0] (program name) for simplicity in checking previous args
+		if i == 0 {
+			if err := ValidateCommandArg(arg); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		// Skip validation for Git format specifiers and other special Git arguments
+		if strings.HasPrefix(arg, "--format=") ||
+			(i > 1 && strings.HasPrefix(args[i-2], "--format")) ||
+			strings.HasPrefix(arg, "--pretty=") {
+			continue
+		}
+
+		// Skip full validation for Git revision ranges (containing ..) when used with Git commands
+		if i > 1 && strings.Contains(arg, "..") && prog == "git" &&
+			(args[0] == "rev-list" || args[0] == "log" || args[0] == "diff" ||
+				args[0] == "show" || args[0] == "blame") {
+			// Still perform basic command injection checks with ValidateCommandArg
+			if err := ValidateCommandArg(arg); err != nil {
+				return nil, fmt.Errorf("invalid revision range: %w", err)
+			}
+			continue
+		}
+
+		if err := ValidateCommandArg(arg); err != nil {
+			return nil, err
+		}
+	}
+
+	// Create command with secure environment
+	cmd := exec.Command(prog, args...)
+
+	// Explicitly set a limited environment
+	cmd.Env = []string{
+		"PATH=" + os.Getenv("PATH"),
+		"HOME=" + os.Getenv("HOME"),
+		"USER=" + os.Getenv("USER"),
+		"LANG=" + os.Getenv("LANG"),
+		"LC_ALL=" + os.Getenv("LC_ALL"),
+	}
+
+	// Add Git-specific environment variables for Git commands
+	if prog == "git" {
+		cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0") // Disable git credential prompting
+
+		// Add other necessary git environment variables if they exist
+		for _, envVar := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_CONFIG"} {
+			if val := os.Getenv(envVar); val != "" {
+				cmd.Env = append(cmd.Env, envVar+"="+val)
+			}
+		}
+	}
+
+	return cmd, nil
+}
+
+// setupSecureCommand is an alias to the exported SetupSecureCommand
+// for backward compatibility within this package
+func setupSecureCommand(prog string, args ...string) (*exec.Cmd, error) {
+	return SetupSecureCommand(prog, args...)
 }
 
 // Run executes a git command with the given arguments and returns its output
@@ -69,16 +213,53 @@ func (s *ShellGit) Run(args ...string) (string, error) {
 // run is the internal implementation of Run
 func (s *ShellGit) run(args ...string) (string, error) {
 	// Validate all arguments
-	for _, arg := range args {
+	for i, arg := range args {
+		// Skip flags
 		if strings.HasPrefix(arg, "-") {
-			continue // Skip flags
+			continue
 		}
+
+		// Skip validation for Git format specifiers
+		if i > 0 && strings.HasPrefix(args[i-1], "--format=") {
+			continue
+		}
+
+		// Skip validation for format values directly following --format
+		if i > 0 && args[i-1] == "--format" {
+			continue
+		}
+
+		// Skip full validation for Git revision ranges (containing ..) when used with rev-list, log, or diff commands
+		if i > 0 && strings.Contains(arg, "..") &&
+			(args[0] == "rev-list" || args[0] == "log" || args[0] == "diff" ||
+				args[0] == "show" || args[0] == "blame") {
+			// Still perform basic command injection checks
+			if err := ValidateCommandArg(arg); err != nil {
+				return "", fmt.Errorf("invalid revision range: %w", err)
+			}
+			continue
+		}
+
+		// Skip validation for commit messages that follow -m flag
+		if i > 0 && (args[i-1] == "-m" || args[i-1] == "--message") {
+			// For commit messages, use the less strict ValidateCommandArg
+			if err := ValidateCommandArg(arg); err != nil {
+				return "", fmt.Errorf("invalid commit message: %w", err)
+			}
+			continue
+		}
+
 		if err := validateRef(arg); err != nil {
 			return "", fmt.Errorf("invalid argument: %w", err)
 		}
 	}
 
-	cmd := exec.Command("git", args...)
+	// Use our secure command setup function
+	cmd, err := setupSecureCommand("git", args...)
+	if err != nil {
+		return "", err
+	}
+
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -91,7 +272,54 @@ func (s *ShellGit) run(args ...string) (string, error) {
 // runInteractive executes a git command in interactive mode, connecting it to the terminal's
 // standard input, output, and error streams
 func (s *ShellGit) runInteractive(args ...string) error {
-	cmd := exec.Command("git", args...)
+	// Validate all arguments
+	for i, arg := range args {
+		// Skip flags
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+
+		// Skip validation for Git format specifiers
+		if i > 0 && strings.HasPrefix(args[i-1], "--format=") {
+			continue
+		}
+
+		// Skip validation for format values directly following --format
+		if i > 0 && args[i-1] == "--format" {
+			continue
+		}
+
+		// Skip full validation for Git revision ranges (containing ..) when used with rev-list, log, or diff commands
+		if i > 0 && strings.Contains(arg, "..") &&
+			(args[0] == "rev-list" || args[0] == "log" || args[0] == "diff" ||
+				args[0] == "show" || args[0] == "blame") {
+			// Still perform basic command injection checks
+			if err := ValidateCommandArg(arg); err != nil {
+				return fmt.Errorf("invalid revision range: %w", err)
+			}
+			continue
+		}
+
+		// Skip validation for commit messages that follow -m flag
+		if i > 0 && (args[i-1] == "-m" || args[i-1] == "--message") {
+			// For commit messages, use the less strict ValidateCommandArg
+			if err := ValidateCommandArg(arg); err != nil {
+				return fmt.Errorf("invalid commit message: %w", err)
+			}
+			continue
+		}
+
+		if err := validateRef(arg); err != nil {
+			return fmt.Errorf("invalid argument: %w", err)
+		}
+	}
+
+	// Use our secure command setup function
+	cmd, err := setupSecureCommand("git", args...)
+	if err != nil {
+		return err
+	}
+
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -167,12 +395,26 @@ func (s *ShellGit) Push(branch string, force bool) error {
 		return fmt.Errorf("invalid branch name: %w", err)
 	}
 
+	// Try normal push first
 	args := []string{"push", "origin", branch}
 	if force {
 		args = []string{"push", "--force", "origin", branch}
 	}
+
 	_, err := s.run(args...)
-	return err
+	if err != nil {
+		// If the error is about missing upstream, set it up automatically
+		if strings.Contains(err.Error(), "no upstream branch") ||
+			strings.Contains(err.Error(), "set-upstream") {
+			// Set the upstream branch and try again
+			if force {
+				return s.runInteractive("push", "--set-upstream", "--force", "origin", branch)
+			}
+			return s.runInteractive("push", "--set-upstream", "origin", branch)
+		}
+		return err
+	}
+	return nil
 }
 
 // PushWithLease pushes the specified branch to the remote repository using --force-with-lease
@@ -182,8 +424,18 @@ func (s *ShellGit) PushWithLease(branch string) error {
 		return fmt.Errorf("invalid branch name: %w", err)
 	}
 
+	// Try normal force-with-lease push first
 	_, err := s.run("push", "--force-with-lease", "origin", branch)
-	return err
+	if err != nil {
+		// If the error is about missing upstream, set it up automatically
+		if strings.Contains(err.Error(), "no upstream branch") ||
+			strings.Contains(err.Error(), "set-upstream") {
+			// Set the upstream branch and try again with force-with-lease
+			return s.runInteractive("push", "--set-upstream", "--force-with-lease", "origin", branch)
+		}
+		return err
+	}
+	return nil
 }
 
 // DefaultBranch returns the name of the default branch (usually main or master)
@@ -651,4 +903,41 @@ func (s *ShellGit) DeleteRemoteBranch(name string) error {
 	}
 	_, err := s.run("push", "origin", "--delete", name)
 	return err
+}
+
+// StagedDiff returns the diff of staged changes
+func (g *ShellGit) StagedDiff() (string, error) {
+	return g.Run("diff", "--cached")
+}
+
+// GrepDiff searches for a pattern in a diff and returns matching lines
+func (g *ShellGit) GrepDiff(diff string, pattern string) ([]string, error) {
+	// Validate the pattern for command injection
+	if err := validateCommandArg(pattern); err != nil {
+		return nil, fmt.Errorf("invalid grep pattern: %w", err)
+	}
+
+	// Use our secure command setup function
+	cmd, err := setupSecureCommand("grep", "-P", pattern)
+	if err != nil {
+		return nil, err
+	}
+
+	cmd.Stdin = strings.NewReader(diff)
+
+	output, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			// grep returns exit code 1 when no matches are found
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	// Split output into lines and remove empty ones
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		return nil, nil
+	}
+	return lines, nil
 }

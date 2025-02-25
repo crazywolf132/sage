@@ -53,6 +53,8 @@ type Service interface {
 	SetConfig(key, value string, global bool) error
 	GetRepoPath() (string, error)
 	Run(args ...string) (string, error)
+	StagedDiff() (string, error)
+	GrepDiff(diff string, pattern string) ([]string, error)
 }
 
 // SetConfig sets a git config value
