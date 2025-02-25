@@ -2,13 +2,13 @@ package config
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/BurntSushi/toml"
+	"github.com/crazywolf132/sage/internal/git"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -74,13 +74,15 @@ func initGitRepo(dir string) error {
 	}
 
 	for _, cmd := range cmds {
-		c := exec.Command(cmd[0], cmd[1:]...)
+		c, err := git.SetupSecureCommand(cmd[0], cmd[1:]...)
+		if err != nil {
+			return err
+		}
 		c.Dir = dir
 		if err := c.Run(); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 

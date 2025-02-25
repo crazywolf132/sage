@@ -8,10 +8,11 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/crazywolf132/sage/internal/git"
 )
 
 const baseURL = "https://api.github.com"
@@ -567,7 +568,12 @@ func decodeBase64(s string) (string, error) {
 
 // runCmd is a helper to run shell commands.
 func runCmd(prog string, args ...string) (string, error) {
-	cmd := exec.Command(prog, args...)
+	// Use the secure command function from the git package
+	cmd, err := git.SetupSecureCommand(prog, args...)
+	if err != nil {
+		return "", err
+	}
+
 	b, err := cmd.CombinedOutput()
 	return string(b), err
 }
@@ -660,7 +666,11 @@ func getToken() TokenSource {
 // getGHCliToken attempts to get the GitHub token from the gh CLI configuration
 func getGHCliToken() (string, error) {
 	// Try to get token using gh CLI
-	cmd := exec.Command("gh", "auth", "token")
+	cmd, err := git.SetupSecureCommand("gh", "auth", "token")
+	if err != nil {
+		return "", err
+	}
+
 	output, err := cmd.Output()
 	if err == nil {
 		token := strings.TrimSpace(string(output))
@@ -682,7 +692,11 @@ func getOwnerAndRepo() (string, string) {
 	}
 
 	// Fall back to git remote
-	cmd := exec.Command("git", "remote", "get-url", "origin")
+	cmd, err := git.SetupSecureCommand("git", "remote", "get-url", "origin")
+	if err != nil {
+		return "", ""
+	}
+
 	out, err := cmd.Output()
 	if err != nil {
 		return "", ""

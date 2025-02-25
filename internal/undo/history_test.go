@@ -71,6 +71,8 @@ func (m *MockGit) GetCommitHash(ref string) (string, error)                     
 func (m *MockGit) IsAncestor(commit1, commit2 string) (bool, error)              { return false, nil }
 func (m *MockGit) SetConfig(key, value string, global bool) error                { return nil }
 func (m *MockGit) GetRepoPath() (string, error)                                  { return "", nil }
+func (m *MockGit) StagedDiff() (string, error)                                   { return "", nil }
+func (m *MockGit) GrepDiff(diff string, pattern string) ([]string, error)        { return nil, nil }
 
 func TestNewHistory(t *testing.T) {
 	h := NewHistory()
