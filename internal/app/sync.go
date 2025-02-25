@@ -346,8 +346,8 @@ func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 			if opts.Verbose {
 				ui.Info("Branch has diverged from remote, using merge strategy for remote changes")
 			}
-			// For diverged branches, use regular pull (with merge)
-			pullErr = g.Pull()
+			// For diverged branches, use pull with merge strategy explicitly set
+			pullErr = g.PullMerge()
 		} else {
 			// For branches that are just behind, use fast-forward only
 			pullErr = g.PullFF()

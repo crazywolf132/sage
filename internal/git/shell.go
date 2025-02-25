@@ -507,6 +507,11 @@ func (s *ShellGit) PullFF() error {
 	return s.runInteractive("pull", "--ff-only")
 }
 
+// PullMerge performs a pull with merge strategy explicitly set
+func (s *ShellGit) PullMerge() error {
+	return s.runInteractive("pull", "--no-rebase")
+}
+
 // PullRebase performs a pull with rebase
 func (s *ShellGit) PullRebase() error {
 	return s.runInteractive("pull", "--rebase")
