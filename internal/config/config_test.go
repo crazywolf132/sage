@@ -83,6 +83,7 @@ func initGitRepo(dir string) error {
 			return err
 		}
 	}
+
 	return nil
 }
 
