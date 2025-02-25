@@ -222,10 +222,7 @@ func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 	var result SyncResult
 	result.StartTime = time.Now()
 
-	if opts.DryRun {
-		ui.Info("Dry run: Previewing sync operations without modifying your repository")
-	}
-
+	// Log settings only at top level to avoid duplicates
 	// 1. Repository Check
 	spinner.Start("Verifying repository...")
 	if err := verifyRepoState(g); err != nil {
@@ -330,6 +327,30 @@ func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 	// Then check if we're behind remote (if it exists)
 	behind, err := isBehindRemote(g, curBranch)
 	if err == nil && behind {
+		// Pull remote changes for the current branch before integrating with parent
+		// Only do this if the branch has a remote tracking branch
+		spinner.Start(fmt.Sprintf("Pulling changes from remote for branch '%s'...", curBranch))
+		// Try to pull, and handle error if no upstream branch
+		if err := g.PullFF(); err != nil {
+			// If there's no upstream branch, we can ignore this error and continue
+			if !strings.Contains(err.Error(), "no upstream branch") &&
+				!strings.Contains(err.Error(), "no tracking information") {
+				spinner.StopFail()
+				if result.StashedFiles {
+					restoreSpinner := ui.NewSpinner()
+					restoreSpinner.Start("Restoring your work...")
+					_ = g.StashPop()
+					restoreSpinner.StopSuccess()
+				}
+				return handleSyncError(g, err, &result)
+			}
+			spinner.Stop()
+			if opts.Verbose {
+				ui.Info(fmt.Sprintf("No upstream branch found for '%s'", curBranch))
+			}
+		} else {
+			spinner.StopSuccess()
+		}
 		needsUpdate = true
 	}
 
