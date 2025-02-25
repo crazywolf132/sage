@@ -335,12 +335,25 @@ func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 	}
 	if err == nil && behind {
 		// Pull remote changes for the current branch before integrating with parent
-		// Only do this if the branch has a remote tracking branch
 		spinner.Start(fmt.Sprintf("Pulling changes from remote for branch '%s'...", curBranch))
-		// Try to pull, and handle error if no upstream branch
-		if err := g.PullFF(); err != nil {
-			// We already checked that the branch has a remote tracking branch,
-			// so any error here is a real error
+
+		// Check if the branch is also ahead (has diverged from remote)
+		isDiverged, _ := isAheadOfRemote(g, curBranch)
+
+		// Use the appropriate pull strategy
+		var pullErr error
+		if isDiverged {
+			if opts.Verbose {
+				ui.Info("Branch has diverged from remote, using merge strategy for remote changes")
+			}
+			// For diverged branches, use regular pull (with merge)
+			pullErr = g.Pull()
+		} else {
+			// For branches that are just behind, use fast-forward only
+			pullErr = g.PullFF()
+		}
+
+		if pullErr != nil {
 			spinner.StopFail()
 			if result.StashedFiles {
 				restoreSpinner := ui.NewSpinner()
@@ -348,8 +361,9 @@ func performSync(g git.Service, opts SyncOptions, spinner *ui.Spinner) error {
 				_ = g.StashPop()
 				restoreSpinner.StopSuccess()
 			}
-			return handleSyncError(g, err, &result)
+			return handleSyncError(g, pullErr, &result)
 		}
+
 		spinner.StopSuccess()
 		needsUpdate = true
 	}
@@ -606,9 +620,6 @@ func isBehindRemote(g git.Service, branch string) (bool, error) {
 		return false, fmt.Errorf("status check failed: %w", err)
 	}
 
-	// Debug: Print the status output
-	fmt.Printf("DEBUG: git status output: '%s'\n", out)
-
 	// Parse the first line of status output
 	lines := strings.Split(out, "\n")
 	if len(lines) == 0 {
@@ -622,7 +633,32 @@ func isBehindRemote(g git.Service, branch string) (bool, error) {
 	// "## local-test...origin/test-sync-with-remote [ahead 1, behind 1]"
 	statusLine := lines[0]
 
-	// Look specifically for "[behind" pattern in status line
+	// Look specifically for "behind" pattern in status line
 	// This will match both "[behind N]" and "[ahead N, behind M]"
 	return strings.Contains(statusLine, "behind"), nil
+}
+
+func isAheadOfRemote(g git.Service, branch string) (bool, error) {
+	// Use git status to check if we're ahead remote
+	out, err := g.Run("status", "-sb")
+	if err != nil {
+		return false, fmt.Errorf("status check failed: %w", err)
+	}
+
+	// Parse the first line of status output
+	lines := strings.Split(out, "\n")
+	if len(lines) == 0 {
+		return false, fmt.Errorf("unexpected empty output from git status")
+	}
+
+	// Check if the status line contains indicators that we're ahead
+	// Examples:
+	// "## master...origin/master [ahead 1]"
+	// "## local-test...origin/test-sync-with-remote [ahead 1]"
+	// "## local-test...origin/test-sync-with-remote [ahead 1, behind 1]"
+	statusLine := lines[0]
+
+	// Look specifically for "ahead" pattern in status line
+	// This will match both "[ahead N]" and "[ahead N, behind M]"
+	return strings.Contains(statusLine, "ahead"), nil
 }
