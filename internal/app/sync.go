@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -601,65 +600,26 @@ func handleSyncError(g git.Service, err error, result *SyncResult) error {
 }
 
 func isBehindRemote(g git.Service, branch string) (bool, error) {
-	// First, get the actual upstream branch name
-	out, err := g.Run("rev-parse", "--abbrev-ref", branch+"@{upstream}")
-
-	// If there's no upstream branch, we're not behind
+	// Use git status to check if we're behind remote
+	out, err := g.Run("status", "-sb")
 	if err != nil {
-		if strings.Contains(err.Error(), "no upstream") ||
-			strings.Contains(err.Error(), "no tracking information") {
-			return false, fmt.Errorf("no upstream branch configured")
-		}
-		return false, fmt.Errorf("upstream check failed: %w", err)
+		return false, fmt.Errorf("status check failed: %w", err)
 	}
 
-	remoteBranch := strings.TrimSpace(out)
-	fmt.Printf("DEBUG: Using remote branch: %s for local branch: %s\n", remoteBranch, branch)
+	// Debug: Print the status output
+	fmt.Printf("DEBUG: git status output: '%s'\n", out)
 
-	// Get remote branch hash
-	remoteHash, err := g.GetCommitHash(remoteBranch)
-	if err != nil {
-		return false, fmt.Errorf("remote branch check failed: %w", err)
+	// Parse the first line of status output
+	lines := strings.Split(out, "\n")
+	if len(lines) == 0 {
+		return false, fmt.Errorf("unexpected empty output from git status")
 	}
 
-	// Get local branch hash for debugging
-	localHash, err := g.GetCommitHash(branch)
-	if err != nil {
-		return false, fmt.Errorf("local branch check failed: %w", err)
-	}
-
-	// Debug: Print the hashes
-	fmt.Printf("DEBUG: Local hash: %s, Remote hash: %s\n", localHash, remoteHash)
-
-	// Check if we're ahead, behind, or diverged from remote
-	revListOut, err := g.Run("rev-list", "--left-right", "--count", branch+"..."+remoteBranch)
-	if err != nil {
-		return false, fmt.Errorf("rev-list failed: %w", err)
-	}
-
-	// Debug: Print the raw output
-	fmt.Printf("DEBUG: rev-list output: '%s'\n", revListOut)
-
-	// Parse output like "1	2" where first number is ahead count, second is behind count
-	parts := strings.Fields(revListOut)
-	if len(parts) != 2 {
-		return false, fmt.Errorf("unexpected output format from git rev-list: %s", revListOut)
-	}
-
-	// Parse the counts
-	aheadCount, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return false, fmt.Errorf("failed to parse ahead count: %w", err)
-	}
-
-	behindCount, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return false, fmt.Errorf("failed to parse behind count: %w", err)
-	}
-
-	// Debug: Print the counts
-	fmt.Printf("DEBUG: Ahead count: %d, Behind count: %d\n", aheadCount, behindCount)
-
-	// We're behind if the behind count is greater than 0
-	return behindCount > 0, nil
+	// Check if the status line contains indicators that we're behind
+	// Examples:
+	// "## master...origin/master [behind 1]"
+	// "## local-test...origin/test-sync-with-remote [behind 1]"
+	// "## local-test...origin/test-sync-with-remote [ahead 1, behind 1]"
+	statusLine := lines[0]
+	return strings.Contains(statusLine, "[behind"), nil
 }
