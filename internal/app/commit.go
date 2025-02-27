@@ -363,10 +363,13 @@ func Commit(g git.Service, opts CommitOptions) (CommitResult, error) {
 		fileOptions := make([]string, 0, len(unstagedFiles))
 		defaultSelected := make([]string, 0)
 
+		// Include all files, with special handling for dot directories
 		for _, file := range unstagedFiles {
 			fileOptions = append(fileOptions, file)
-			// No longer select all files by default
-			// defaultSelected = append(defaultSelected, file)
+			// Auto-select .github files to ensure they're visible and included by default
+			if strings.Contains(file, ".github/") {
+				defaultSelected = append(defaultSelected, file)
+			}
 		}
 
 		// If there are no unstaged files but the interactive flag is set

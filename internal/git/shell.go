@@ -640,7 +640,8 @@ func (s *ShellGit) IsRebasing() (bool, error) {
 // StatusPorcelain returns the git status in porcelain format
 func (s *ShellGit) StatusPorcelain() (string, error) {
 	// Use --porcelain=v1 to ensure consistent output format
-	return s.run("status", "--porcelain=v1")
+	// Add -uall to show all untracked files, including those in untracked directories
+	return s.run("status", "--porcelain=v1", "-uall")
 }
 
 // ResetSoft performs a soft reset to the specified reference
