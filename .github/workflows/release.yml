@@ -42,9 +42,10 @@ jobs:
       - name: Auto-generate tag
         id: tag
         run: |
-          # Get the latest tag, if any
-          git fetch --prune --tags
-          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          # Get the latest tag with improved fetching and sorting
+          git fetch --prune --unshallow --tags
+          # Sort tags by version number (v-prefixed semver) and get the latest
+          latest_tag=$(git tag -l "v*" | sort -V | tail -n 1)
           
           if [ -z "$latest_tag" ]; then
             echo "No tags found, starting from v0.0.0"
