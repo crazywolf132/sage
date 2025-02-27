@@ -43,7 +43,12 @@ jobs:
         id: tag
         run: |
           # Get the latest tag with improved fetching and sorting
-          git fetch --prune --unshallow --tags
+          # Check if repo is shallow before using --unshallow
+          if [ -f .git/shallow ]; then
+            git fetch --prune --unshallow --tags
+          else
+            git fetch --prune --tags
+          fi
           # Sort tags by version number (v-prefixed semver) and get the latest
           latest_tag=$(git tag -l "v*" | sort -V | tail -n 1)
           
