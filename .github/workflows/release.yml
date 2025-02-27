@@ -17,8 +17,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # Full history is needed for versioning
-          fetch-tags: true  # Explicitly fetch tags
+          fetch-depth: 0  # Full history is needed for versioning and changelog
+          fetch-tags: true  # Explicitly fetch tags for changelog generation
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -65,6 +65,13 @@ jobs:
             version=${latest_tag#v}
             IFS='.' read -r major minor patch <<< "$version"
             is_initial_release=false
+          fi
+          
+          # Save the previous tag to be used by GoReleaser for changelog generation
+          if [ "$is_initial_release" = "true" ]; then
+            echo "PREVIOUS_TAG=" >> $GITHUB_ENV
+          else
+            echo "PREVIOUS_TAG=$latest_tag" >> $GITHUB_ENV
           fi
           
           # Always analyze commits, even for initial release
@@ -134,5 +141,7 @@ jobs:
           version: latest
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
-          GORELEASER_CURRENT_TAG: ${{ env.NEW_TAG }} 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ env.NEW_TAG }}
+          GORELEASER_PREVIOUS_TAG: ${{ env.PREVIOUS_TAG }}
+          GIT_FETCH_DEPTH: 0 

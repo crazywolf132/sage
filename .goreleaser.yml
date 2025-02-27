@@ -17,7 +17,11 @@ release:
     
     Welcome to this new release!
   footer: |
-    **Full Changelog**: https://github.com/crazywolf132/sage/compare/{{ .PreviousTag }}...{{ .Tag }}
+    {{ if .Env.GORELEASER_PREVIOUS_TAG }}
+    **Full Changelog**: https://github.com/crazywolf132/sage/compare/{{ .Env.GORELEASER_PREVIOUS_TAG }}...{{ .Tag }}
+    {{ else }}
+    **First Release**
+    {{ end }}
   name_template: "{{.Version}}"
 
 builds:
@@ -63,7 +67,7 @@ changelog:
       - Merge pull request
       - Merge branch
       - '^chore\\(deps\\):'
-  from: "{{ .PreviousTag }}"  # Start changelog from previous tag
+  from: "{{ .Env.GORELEASER_PREVIOUS_TAG }}"  # Start changelog from previous tag from the env
   to: "{{ .Tag }}"            # End changelog at current tag
   groups:
     - title: 'Breaking Changes 🛠'
