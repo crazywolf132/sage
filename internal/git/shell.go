@@ -229,6 +229,18 @@ func (s *ShellGit) run(args ...string) (string, error) {
 			continue
 		}
 
+		// Skip validation for temporary files used for commit messages with -F flag
+		if i > 0 && (args[i-1] == "-F" || args[i-1] == "--file") {
+			// Basic validation to ensure it's a temporary file path
+			if strings.Contains(arg, "/tmp/") || strings.Contains(arg, "\\Temp\\") || strings.HasPrefix(arg, "sage-commit-msg-") {
+				// Still perform basic command injection checks
+				if err := validatePath(arg); err != nil {
+					return "", fmt.Errorf("invalid file path: %w", err)
+				}
+				continue
+			}
+		}
+
 		// Skip full validation for Git revision ranges (containing ..) when used with rev-list, log, or diff commands
 		if i > 0 && strings.Contains(arg, "..") &&
 			(args[0] == "rev-list" || args[0] == "log" || args[0] == "diff" ||
@@ -287,6 +299,18 @@ func (s *ShellGit) runInteractive(args ...string) error {
 		// Skip validation for format values directly following --format
 		if i > 0 && args[i-1] == "--format" {
 			continue
+		}
+
+		// Skip validation for temporary files used for commit messages with -F flag
+		if i > 0 && (args[i-1] == "-F" || args[i-1] == "--file") {
+			// Basic validation to ensure it's a temporary file path
+			if strings.Contains(arg, "/tmp/") || strings.Contains(arg, "\\Temp\\") || strings.HasPrefix(arg, "sage-commit-msg-") {
+				// Still perform basic command injection checks
+				if err := validatePath(arg); err != nil {
+					return fmt.Errorf("invalid file path: %w", err)
+				}
+				continue
+			}
 		}
 
 		// Skip full validation for Git revision ranges (containing ..) when used with rev-list, log, or diff commands
@@ -362,29 +386,83 @@ func (s *ShellGit) StageAll() error {
 // If allowEmpty is true, allows creating empty commits
 // If stageAll is true, automatically stages all changes before committing
 func (s *ShellGit) Commit(msg string, allowEmpty bool, stageAll bool) error {
+	// Check if the message contains newlines or other special characters
+	hasNewlines := strings.Contains(msg, "\n")
+
 	args := []string{"commit"}
 	if stageAll {
 		args = append(args, "-a")
 	}
-	args = append(args, "-m", msg)
+
 	if allowEmpty {
 		args = append(args, "--allow-empty")
 	}
-	_, err := s.run(args...)
+
+	// For simple messages, use -m flag
+	if !hasNewlines {
+		args = append(args, "-m", msg)
+		_, err := s.run(args...)
+		return err
+	}
+
+	// For complex multi-line messages, use a temporary file with -F flag
+	tmpFile, err := os.CreateTemp("", "sage-commit-msg-")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary file for commit message: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(msg); err != nil {
+		return fmt.Errorf("failed to write commit message to temporary file: %w", err)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temporary file: %w", err)
+	}
+
+	args = append(args, "-F", tmpFile.Name())
+	_, err = s.run(args...)
 	return err
 }
 
 // CommitAmend amends the last commit using '--amend'
 func (s *ShellGit) CommitAmend(msg string, allowEmpty bool, stageAll bool) error {
+	// Check if the message contains newlines or other special characters
+	hasNewlines := strings.Contains(msg, "\n")
+
 	args := []string{"commit", "--amend"}
 	if stageAll {
 		args = append(args, "-a")
 	}
-	args = append(args, "-m", msg)
+
 	if allowEmpty {
 		args = append(args, "--allow-empty")
 	}
-	_, err := s.run(args...)
+
+	// For simple messages, use -m flag
+	if !hasNewlines {
+		args = append(args, "-m", msg)
+		_, err := s.run(args...)
+		return err
+	}
+
+	// For complex multi-line messages, use a temporary file with -F flag
+	tmpFile, err := os.CreateTemp("", "sage-commit-msg-")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary file for commit message: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(msg); err != nil {
+		return fmt.Errorf("failed to write commit message to temporary file: %w", err)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temporary file: %w", err)
+	}
+
+	args = append(args, "-F", tmpFile.Name())
+	_, err = s.run(args...)
 	return err
 }
 

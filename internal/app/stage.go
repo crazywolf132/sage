@@ -78,7 +78,33 @@ func StageFiles(g git.Service, patterns []string, useAI bool) error {
 	}
 
 	if len(files) == 0 {
-		fmt.Printf("%s No files to stage\n", ui.Yellow("!"))
+		// Get currently staged files to show info about
+		var stagedFiles []string
+		for _, line := range strings.Split(strings.TrimSpace(status), "\n") {
+			if line == "" {
+				continue
+			}
+
+			statusCode := line[:2]
+			path := strings.TrimSpace(line[3:])
+
+			// Only include staged files (X is not space or ?)
+			x := statusCode[0]
+			if x != ' ' && x != '?' {
+				if strings.Contains(path, " -> ") {
+					parts := strings.Split(path, " -> ")
+					path = parts[1] // Use the new path
+				}
+				stagedFiles = append(stagedFiles, path)
+			}
+		}
+
+		if len(stagedFiles) > 0 {
+			fmt.Printf("%s No unstaged files (you have %d staged files ready to commit)\n", ui.Yellow("!"), len(stagedFiles))
+			fmt.Printf("Use %s to commit these staged changes\n", ui.Blue("sage commit --only-staged"))
+		} else {
+			fmt.Printf("%s No files to stage\n", ui.Yellow("!"))
+		}
 		return nil
 	}
 

@@ -122,6 +122,10 @@ type CommitOptions struct {
 	ChangeType string
 	// Amend determines if the last commit should be amended
 	Amend bool
+	// OnlyStaged determines if only staged changes should be committed
+	OnlyStaged bool
+	// Interactive determines if the user should interactively select files
+	Interactive bool
 }
 
 // CommitResult contains the outcome of a commit operation.
@@ -130,6 +134,17 @@ type CommitResult struct {
 	ActualMessage string
 	// Pushed indicates if the commit was pushed to remote
 	Pushed bool
+	// Stats provides statistics about the committed files
+	Stats CommitResultStats
+}
+
+// CommitResultStats represents the statistics of staged and unstaged files
+type CommitResultStats struct {
+	StagedAdded    int
+	StagedModified int
+	StagedDeleted  int
+	TotalStaged    int
+	TotalUnstaged  int
 }
 
 // changeCommitType modifies a commit message to use a different conventional commit type.
@@ -230,15 +245,31 @@ func formatFindings(findings []Finding) string {
 }
 
 // Commit implements our simplified commit pipeline.
-// It automatically stages every file, then (if no message is provided)
+// It automatically stages every file (unless onlyStaged is true), then (if no message is provided)
 // uses AI (if enabled) to generate a commit message.
 func Commit(g git.Service, opts CommitOptions) (CommitResult, error) {
-	result := CommitResult{}
+	var result CommitResult
 
-	// Verify we're in a Git repository.
-	isRepo, err := g.IsRepo()
-	if err != nil || !isRepo {
-		return result, fmt.Errorf("not a git repository")
+	// Check if only-staged should be the default from config
+	if !opts.OnlyStaged && !opts.Interactive {
+		// Check if user has configured a default behavior for commit
+		onlyStagedDefault := config.Get("commit.only_staged_default", false) == "true"
+		if onlyStagedDefault {
+			opts.OnlyStaged = true
+		}
+	}
+
+	// If amend is set, check that there is a previous commit.
+	if opts.Amend {
+		// Get the last commit message.
+		lastMessageOutput, err := g.Run("log", "--format=%B", "-n", "1")
+		if err != nil {
+			return result, fmt.Errorf("failed to get last commit message: %w", err)
+		}
+		// If no message is set, use the last commit message by default.
+		if opts.Message == "" {
+			opts.Message = strings.TrimSpace(lastMessageOutput)
+		}
 	}
 
 	// Check for sensitive data before proceeding
@@ -276,8 +307,217 @@ func Commit(g git.Service, opts CommitOptions) (CommitResult, error) {
 	if err != nil {
 		return result, fmt.Errorf("failed to get status: %w", err)
 	}
-	if strings.TrimSpace(status) == "" && !opts.AllowEmpty {
+
+	// Check if there are changes to commit
+	hasUnstagedChanges := false
+	hasStagedChanges := false
+
+	// Parse files from status to track both staged and unstaged
+	var unstagedFiles []string
+	var stagedFiles []string
+	stats := CommitResultStats{}
+
+	for _, line := range strings.Split(strings.TrimSpace(status), "\n") {
+		if line == "" {
+			continue
+		}
+		statusCode := line[:2]
+		filePath := strings.TrimSpace(line[3:])
+		x, y := statusCode[0], statusCode[1]
+
+		// Check if file is staged (X is not space or ?)
+		if x != ' ' && x != '?' {
+			hasStagedChanges = true
+			stagedFiles = append(stagedFiles, filePath)
+
+			// Track staged file stats
+			switch x {
+			case 'A':
+				stats.StagedAdded++
+			case 'M':
+				stats.StagedModified++
+			case 'D':
+				stats.StagedDeleted++
+			}
+			stats.TotalStaged++
+		}
+
+		// Check if file has unstaged changes (Y is not space)
+		if y != ' ' {
+			hasUnstagedChanges = true
+			unstagedFiles = append(unstagedFiles, filePath)
+			stats.TotalUnstaged++
+		}
+	}
+
+	// If no changes (staged or unstaged) and empty commits not allowed
+	if !hasStagedChanges && !hasUnstagedChanges && !opts.AllowEmpty {
 		return result, fmt.Errorf("no changes to commit")
+	}
+
+	// Interactive mode: Let the user select which files to stage
+	if opts.Interactive && hasUnstagedChanges {
+		fmt.Println(ui.Bold("Select files to stage for this commit:"))
+
+		// Create checkboxes for all unstaged files
+		fileOptions := make([]string, 0, len(unstagedFiles))
+		defaultSelected := make([]string, 0)
+
+		for _, file := range unstagedFiles {
+			fileOptions = append(fileOptions, file)
+			// No longer select all files by default
+			// defaultSelected = append(defaultSelected, file)
+		}
+
+		// If there are no unstaged files but the interactive flag is set
+		if len(fileOptions) == 0 {
+			fmt.Println(ui.Yellow("No unstaged files to select. Proceeding with already staged files."))
+			opts.OnlyStaged = true
+		} else {
+			// Ask user which files to stage
+			var selectedFiles []string
+			prompt := &survey.MultiSelect{
+				Message: "Select files to stage:",
+				Options: fileOptions,
+				Default: defaultSelected,
+			}
+
+			if err := survey.AskOne(prompt, &selectedFiles); err != nil {
+				return result, fmt.Errorf("canceled: %w", err)
+			}
+
+			// If no files selected, use only-staged mode if there are already staged files
+			if len(selectedFiles) == 0 {
+				if hasStagedChanges {
+					fmt.Println(ui.Yellow("No files selected. Proceeding with already staged files."))
+					opts.OnlyStaged = true
+				} else {
+					return result, fmt.Errorf("no files selected to commit")
+				}
+			} else {
+				// Stage the selected files - use Run method to stage each file
+				for _, file := range selectedFiles {
+					if _, err := g.Run("add", file); err != nil {
+						return result, fmt.Errorf("failed to stage %s: %w", file, err)
+					}
+				}
+
+				fmt.Printf("%s Staged %d file(s)\n", ui.Green("✓"), len(selectedFiles))
+
+				// Now we only want to commit what we've just staged
+				opts.OnlyStaged = true
+				hasStagedChanges = true
+			}
+		}
+	}
+
+	// Smart mode: If there are staged changes but --only-staged flag wasn't explicitly set,
+	// and there are also unstaged changes, ask the user what they want to do
+	if !opts.OnlyStaged && hasStagedChanges && hasUnstagedChanges && !opts.Interactive {
+		var choice string
+		prompt := &survey.Select{
+			Message: "You have both staged and unstaged changes. What would you like to do?",
+			Options: []string{
+				"Commit only staged changes",
+				"Stage all changes and commit everything",
+				"View what's staged vs. unstaged before deciding",
+			},
+			Default: "Commit only staged changes",
+		}
+
+		if err := survey.AskOne(prompt, &choice); err != nil {
+			return result, fmt.Errorf("canceled: %w", err)
+		}
+
+		switch choice {
+		case "Commit only staged changes":
+			opts.OnlyStaged = true
+		case "View what's staged vs. unstaged before deciding":
+			// Show a summary of staged vs unstaged changes
+			fmt.Println("\n" + ui.Bold("Staged changes (will be committed):"))
+			stagedDiff, err := g.StagedDiff()
+			if err == nil && stagedDiff != "" {
+				// Find up to 5 files to show as a summary
+				var stagedFiles []string
+				for _, line := range strings.Split(strings.TrimSpace(status), "\n") {
+					if line == "" {
+						continue
+					}
+					statusCode := line[:2]
+					path := strings.TrimSpace(line[3:])
+					x := statusCode[0]
+					if x != ' ' && x != '?' {
+						if strings.Contains(path, " -> ") {
+							parts := strings.Split(path, " -> ")
+							path = parts[1]
+						}
+						stagedFiles = append(stagedFiles, ui.Green("+ "+path))
+						if len(stagedFiles) >= 5 {
+							break
+						}
+					}
+				}
+				fmt.Println(strings.Join(stagedFiles, "\n"))
+				if len(stagedFiles) == 5 {
+					fmt.Println("... and more")
+				}
+			} else {
+				fmt.Println("No staged changes")
+			}
+
+			fmt.Println("\n" + ui.Bold("Unstaged changes (will NOT be committed):"))
+			var unstagedFiles []string
+			for _, line := range strings.Split(strings.TrimSpace(status), "\n") {
+				if line == "" {
+					continue
+				}
+				statusCode := line[:2]
+				path := strings.TrimSpace(line[3:])
+				x, y := statusCode[0], statusCode[1]
+				if (x == ' ' || x == '?') && y != ' ' {
+					if strings.Contains(path, " -> ") {
+						parts := strings.Split(path, " -> ")
+						path = parts[1]
+					}
+					unstagedFiles = append(unstagedFiles, ui.Yellow("? "+path))
+					if len(unstagedFiles) >= 5 {
+						break
+					}
+				}
+			}
+			fmt.Println(strings.Join(unstagedFiles, "\n"))
+			if len(unstagedFiles) == 5 {
+				fmt.Println("... and more")
+			}
+
+			// Now ask again after showing the diff
+			var secondChoice string
+			prompt := &survey.Select{
+				Message: "What would you like to do?",
+				Options: []string{
+					"Commit only staged changes",
+					"Stage all changes and commit everything",
+					"Cancel and go back to staging",
+				},
+				Default: "Commit only staged changes",
+			}
+
+			if err := survey.AskOne(prompt, &secondChoice); err != nil {
+				return result, fmt.Errorf("canceled: %w", err)
+			}
+
+			switch secondChoice {
+			case "Commit only staged changes":
+				opts.OnlyStaged = true
+			case "Cancel and go back to staging":
+				return result, fmt.Errorf("commit canceled - use 'sage stage' to select files to stage")
+			}
+		}
+	}
+
+	// If onlyStaged is true but there are no staged changes
+	if opts.OnlyStaged && !hasStagedChanges && !opts.AllowEmpty {
+		return result, fmt.Errorf("no staged changes to commit (use 'sage stage' first or remove --only-staged flag)")
 	}
 
 	// Get current branch for metadata
@@ -385,22 +625,24 @@ func Commit(g git.Service, opts CommitOptions) (CommitResult, error) {
 		opts.Message = changeCommitType(opts.Message, opts.ChangeType)
 	}
 
-	// Stage everything (we no longer exclude .sage/).
-	if err := g.StageAll(); err != nil {
-		return result, err
+	// Stage all changes if not using only staged changes
+	if !opts.OnlyStaged {
+		if err := g.StageAll(); err != nil {
+			return result, err
+		}
 	}
 
 	// Create the commit with the final message and options
 	if opts.Amend {
 		if shellGit, ok := g.(*git.ShellGit); ok {
-			if err := shellGit.CommitAmend(opts.Message, opts.AllowEmpty, true); err != nil {
+			if err := shellGit.CommitAmend(opts.Message, opts.AllowEmpty, !opts.OnlyStaged); err != nil {
 				return result, fmt.Errorf("failed to amend commit: %w", err)
 			}
 		} else {
 			return result, fmt.Errorf("amend flag is not supported for this git implementation")
 		}
 	} else {
-		if err := g.Commit(opts.Message, opts.AllowEmpty, true); err != nil {
+		if err := g.Commit(opts.Message, opts.AllowEmpty, !opts.OnlyStaged); err != nil {
 			return result, fmt.Errorf("failed to commit: %w", err)
 		}
 	}
@@ -411,6 +653,7 @@ func Commit(g git.Service, opts CommitOptions) (CommitResult, error) {
 	}
 
 	result.ActualMessage = opts.Message
+	result.Stats = stats
 
 	// Push the commit to remote if requested
 	if opts.PushAfterCommit {

@@ -277,6 +277,17 @@ func performSync(g git.Service, opts SyncOptions, progress *ui.SyncProgress) err
 	}
 	progress.CompleteStep("fetch", true)
 
+	// Automatically pull changes
+	progress.StartStep("pull")
+	if err := g.Pull(); err != nil {
+		progress.CompleteStep("pull", false)
+		if result.StashedFiles {
+			restoreChanges(g, progress)
+		}
+		return fmt.Errorf("Failed to pull updates: %w", err)
+	}
+	progress.CompleteStep("pull", true)
+
 	// Check if we're on main/master branch
 	isMainBranch := curBranch == parentBranch
 

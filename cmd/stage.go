@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/crazywolf132/sage/internal/app"
 	"github.com/crazywolf132/sage/internal/git"
+	"github.com/crazywolf132/sage/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -17,6 +20,8 @@ var stageCmd = &cobra.Command{
 	Short: "Stage files for commit",
 	Long: `Stage files for commit. Without arguments, shows an interactive file selector.
 With patterns, stages all files matching the glob patterns.
+
+After staging files, use 'sage commit --only-staged' to commit only the staged changes.
 
 Examples:
   # Interactive mode
@@ -44,7 +49,12 @@ Examples:
 			stagePatterns = args
 		}
 
-		return app.StageFiles(g, stagePatterns, stageAI)
+		err := app.StageFiles(g, stagePatterns, stageAI)
+		if err == nil {
+			// If staging was successful, remind about committing with --only-staged
+			fmt.Printf("\nTip: Use %s to commit only these staged changes\n", ui.Blue("sage commit --only-staged"))
+		}
+		return err
 	},
 }
 
