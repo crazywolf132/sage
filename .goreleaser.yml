@@ -55,6 +55,16 @@ archives:
 changelog:
   sort: asc
   use: github
+  abbrev: 0                # Full commit hashes in the changelog
+  filters:
+    exclude:
+      - '^test:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+      - '^chore\\(deps\\):'
+  from: "{{ .PreviousTag }}"  # Start changelog from previous tag
+  to: "{{ .Tag }}"            # End changelog at current tag
   groups:
     - title: 'Breaking Changes 🛠'
       regexp: "^.*!:+.*$"
@@ -73,13 +83,6 @@ changelog:
       order: 4
     - title: 'Other Changes'
       order: 999
-  filters:
-    exclude:
-      - '^test:'
-      - '^ci:'
-      - Merge pull request
-      - Merge branch
-      - '^chore\\(deps\\):'
 
 before:
   hooks:

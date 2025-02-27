@@ -34,6 +34,9 @@ archives:
 
 changelog:
   sort: asc
+  abbrev: 0                # Full commit hashes in the changelog
+  from: "{{ .PreviousTag }}"  # Start changelog from previous tag
+  to: "{{ .Tag }}"            # End changelog at current tag
   filters:
     exclude:
       - '^docs:'
@@ -41,6 +44,24 @@ changelog:
       - '^ci:'
       - Merge pull request
       - Merge branch
+  groups:
+    - title: 'Breaking Changes 🛠'
+      regexp: "^.*!:+.*$"
+      order: 0
+    - title: 'New Features 🎉'
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 1
+    - title: 'Bug Fixes 🐞'
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 2
+    - title: 'Maintenance 🔧'
+      regexp: "^.*chore[(\\w)]*:+.*$"
+      order: 3
+    - title: 'Documentation 📚'
+      regexp: "^.*docs[(\\w)]*:+.*$"
+      order: 4
+    - title: 'Other Changes'
+      order: 999
 
 checksum:
   name_template: 'checksums.txt'
