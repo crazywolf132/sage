@@ -42,6 +42,15 @@ type SyncError struct {
 func (e *SyncError) Error() string {
 	switch e.Type {
 	case "conflict":
+		if len(e.Conflicts) == 0 {
+			return `Conflict detected, but no specific files were found.
+This may indicate that conflicts were resolved remotely.
+
+Try:
+1. Run 'sage sync' to refresh your local state
+2. If issues persist, try 'sage sync --abort' to start over`
+		}
+
 		return fmt.Sprintf(`Conflicts found in these files:
 %s
 
@@ -178,39 +187,64 @@ func handleContinue(g git.Service) SyncResult {
 		}
 	}
 
+	// Fetch the latest changes to ensure we have any remote conflict resolutions
+	if err := g.FetchAll(); err != nil {
+		ui.Warning("Failed to fetch remote updates, continuing with local state only")
+	}
+
 	if merging, _ := g.IsMerging(); merging {
-		err := sg.MergeContinue()
-		if err != nil {
-			conflicts, _ := sg.ListConflictedFiles()
+		conflicts, _ := sg.ListConflictedFiles()
+		// Check if conflicts are actually empty (all resolved)
+		if conflicts == "" {
+			// No conflicts, try to continue the merge
+			err := sg.MergeContinue()
+			if err != nil {
+				return SyncResult{
+					Success: false,
+					Message: fmt.Sprintf("Failed to continue merge: %v", err),
+				}
+			}
 			return SyncResult{
-				Success:     false,
-				NeedsAction: true,
-				Action:      "resolve_conflicts",
-				Message:     "Merge conflicts need to be resolved",
-				Conflicts:   strings.Split(conflicts, "\n"),
+				Success: true,
+				Message: "Successfully continued merge",
 			}
 		}
+
+		// Still have conflicts
 		return SyncResult{
-			Success: true,
-			Message: "Successfully continued merge",
+			Success:     false,
+			NeedsAction: true,
+			Action:      "resolve_conflicts",
+			Message:     "Merge conflicts need to be resolved",
+			Conflicts:   strings.Split(conflicts, "\n"),
 		}
 	}
 
 	if rebase, _ := g.IsRebasing(); rebase {
-		err := sg.RebaseContinue()
-		if err != nil {
-			conflicts, _ := sg.ListConflictedFiles()
+		conflicts, _ := sg.ListConflictedFiles()
+		// Check if conflicts are actually empty (all resolved)
+		if conflicts == "" {
+			// No conflicts, try to continue the rebase
+			err := sg.RebaseContinue()
+			if err != nil {
+				return SyncResult{
+					Success: false,
+					Message: fmt.Sprintf("Failed to continue rebase: %v", err),
+				}
+			}
 			return SyncResult{
-				Success:     false,
-				NeedsAction: true,
-				Action:      "resolve_conflicts",
-				Message:     "Rebase conflicts need to be resolved",
-				Conflicts:   strings.Split(conflicts, "\n"),
+				Success: true,
+				Message: "Successfully continued rebase",
 			}
 		}
+
+		// Still have conflicts
 		return SyncResult{
-			Success: true,
-			Message: "Successfully continued rebase",
+			Success:     false,
+			NeedsAction: true,
+			Action:      "resolve_conflicts",
+			Message:     "Rebase conflicts need to be resolved",
+			Conflicts:   strings.Split(conflicts, "\n"),
 		}
 	}
 
@@ -640,10 +674,25 @@ func handleSyncError(g git.Service, err error, result *SyncResult) error {
 			return err
 		}
 		conflicts, _ := sg.ListConflictedFiles()
+		conflictsList := strings.Split(conflicts, "\n")
+
+		// Filter out empty strings which can happen if there are no real conflicts
+		var realConflicts []string
+		for _, file := range conflictsList {
+			if file != "" {
+				realConflicts = append(realConflicts, file)
+			}
+		}
+
+		if len(realConflicts) == 0 {
+			// No real conflicts found, might be a transient issue
+			return fmt.Errorf("sync operation failed but no conflict files were found. Try running 'sage sync' again")
+		}
+
 		return &SyncError{
 			Type:      "conflict",
 			Message:   "Merge conflicts detected. Please resolve conflicts and run 'sage sync --continue'",
-			Conflicts: strings.Split(conflicts, "\n"),
+			Conflicts: realConflicts,
 		}
 	}
 
