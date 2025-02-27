@@ -67,8 +67,6 @@ changelog:
       - Merge pull request
       - Merge branch
       - '^chore\\(deps\\):'
-  from: "{{ .Env.GORELEASER_PREVIOUS_TAG }}"  # Start changelog from previous tag from the env
-  to: "{{ .Tag }}"            # End changelog at current tag
   groups:
     - title: 'Breaking Changes 🛠'
       regexp: "^.*!:+.*$"

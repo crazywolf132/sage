@@ -70,8 +70,10 @@ jobs:
           # Save the previous tag to be used by GoReleaser for changelog generation
           if [ "$is_initial_release" = "true" ]; then
             echo "PREVIOUS_TAG=" >> $GITHUB_ENV
+            echo "CHANGELOG_RANGE=" >> $GITHUB_ENV
           else
             echo "PREVIOUS_TAG=$latest_tag" >> $GITHUB_ENV
+            echo "CHANGELOG_RANGE=${latest_tag}...HEAD" >> $GITHUB_ENV
           fi
           
           # Always analyze commits, even for initial release
@@ -143,5 +145,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ env.NEW_TAG }}
+          # Set the previous tag - this will be used by GoReleaser to generate the changelog
           GORELEASER_PREVIOUS_TAG: ${{ env.PREVIOUS_TAG }}
+          # Tell GoReleaser to only include commits in the changelog range
+          GORELEASER_RANGE: ${{ env.CHANGELOG_RANGE }}
           GIT_FETCH_DEPTH: 0 
